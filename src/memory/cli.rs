@@ -71,6 +71,13 @@ fn create_cli_memory(config: &Config) -> Result<Box<dyn Memory>> {
                 bail!("Memory backend 'postgres' requires the 'memory-postgres' feature to be enabled at compile time.");
             }
         }
+        MemoryBackendKind::PostgresQdrantHybrid => super::create_memory_with_storage_and_routes(
+            &config.memory,
+            &config.embedding_routes,
+            Some(&config.storage.provider.config),
+            &config.workspace_dir,
+            config.api_key.as_deref(),
+        ),
         #[cfg(not(feature = "memory-postgres"))]
         MemoryBackendKind::Postgres => {
             bail!("memory backend 'postgres' requires the 'memory-postgres' feature to be enabled");

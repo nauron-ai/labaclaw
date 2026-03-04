@@ -586,6 +586,58 @@ fn check_config_semantics(config: &Config, items: &mut Vec<DiagItem>) {
         }
     }
 
+    let effective_memory_backend = crate::memory::effective_memory_backend_name(
+        &config.memory.backend,
+        Some(&config.storage.provider.config),
+    );
+    if effective_memory_backend == "postgres_qdrant_hybrid" {
+        let has_db_url = config
+            .storage
+            .provider
+            .config
+            .db_url
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty());
+        if has_db_url {
+            items.push(DiagItem::ok(
+                cat,
+                "postgres_qdrant_hybrid: storage.provider.config.db_url is set",
+            ));
+        } else {
+            items.push(DiagItem::error(
+                cat,
+                "postgres_qdrant_hybrid requires [storage.provider.config].db_url",
+            ));
+        }
+
+        let qdrant_url = config
+            .memory
+            .qdrant
+            .url
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string)
+            .or_else(|| {
+                std::env::var("QDRANT_URL")
+                    .ok()
+                    .map(|v| v.trim().to_string())
+            })
+            .filter(|value| !value.is_empty());
+        if let Some(url) = qdrant_url {
+            items.push(DiagItem::ok(
+                cat,
+                format!("postgres_qdrant_hybrid: qdrant endpoint configured ({url})"),
+            ));
+        } else {
+            items.push(DiagItem::error(
+                cat,
+                "postgres_qdrant_hybrid requires [memory.qdrant].url or QDRANT_URL",
+            ));
+        }
+    }
+
     // Channel: at least one configured
     let cc = &config.channels_config;
     let has_channel = cc.channels().iter().any(|(_, ok)| *ok);
