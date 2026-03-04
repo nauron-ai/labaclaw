@@ -165,7 +165,7 @@ OpenClaw stores state in `~/.openclaw/`. ZeroClaw uses configurable backends:
 
 ```toml
 [memory]
-backend = "sqlite"              # sqlite | postgres | qdrant | markdown | none
+backend = "sqlite"              # sqlite | sqlite_qdrant_hybrid | postgres_qdrant_hybrid | postgres | qdrant | markdown | none
 auto_save = true
 embedding_provider = "openai"   # openai | custom:URL | none
 embedding_model = "text-embedding-3-small"
