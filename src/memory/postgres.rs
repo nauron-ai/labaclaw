@@ -213,6 +213,25 @@ impl PostgresMemory {
             score: row.try_get(6).ok(),
         })
     }
+
+    async fn run_db_task<T, F>(task_name: &'static str, task: F) -> Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce() -> Result<T> + Send + 'static,
+    {
+        tokio::task::spawn_blocking(move || {
+            let handle = std::thread::Builder::new()
+                .name(format!("postgres-memory-{task_name}"))
+                .spawn(task)
+                .with_context(|| format!("failed to spawn PostgreSQL task thread: {task_name}"))?;
+
+            handle
+                .join()
+                .map_err(|_| anyhow::anyhow!("PostgreSQL task thread panicked: {task_name}"))?
+        })
+        .await
+        .context("failed to join PostgreSQL blocking task")?
+    }
 }
 
 fn validate_identifier(value: &str, field_name: &str) -> Result<()> {
@@ -262,7 +281,7 @@ impl Memory for PostgresMemory {
         let category = Self::category_to_str(&category);
         let sid = session_id.map(str::to_string);
 
-        tokio::task::spawn_blocking(move || -> Result<()> {
+        Self::run_db_task("store", move || -> Result<()> {
             let now = Utc::now();
             let mut client = client.lock();
             let stmt = format!(
@@ -283,7 +302,7 @@ impl Memory for PostgresMemory {
             client.execute(&stmt, &[&id, &key, &content, &category, &now, &now, &sid])?;
             Ok(())
         })
-        .await?
+        .await
     }
 
     async fn recall(
@@ -297,7 +316,7 @@ impl Memory for PostgresMemory {
         let query = query.trim().to_string();
         let sid = session_id.map(str::to_string);
 
-        tokio::task::spawn_blocking(move || -> Result<Vec<MemoryEntry>> {
+        Self::run_db_task("recall", move || -> Result<Vec<MemoryEntry>> {
             let mut client = client.lock();
             let stmt = format!(
                 "
@@ -322,7 +341,7 @@ impl Memory for PostgresMemory {
                 .map(Self::row_to_entry)
                 .collect::<Result<Vec<MemoryEntry>>>()
         })
-        .await?
+        .await
     }
 
     async fn get(&self, key: &str) -> Result<Option<MemoryEntry>> {
@@ -330,7 +349,7 @@ impl Memory for PostgresMemory {
         let qualified_table = self.qualified_table.clone();
         let key = key.to_string();
 
-        tokio::task::spawn_blocking(move || -> Result<Option<MemoryEntry>> {
+        Self::run_db_task("get", move || -> Result<Option<MemoryEntry>> {
             let mut client = client.lock();
             let stmt = format!(
                 "
@@ -344,7 +363,7 @@ impl Memory for PostgresMemory {
             let row = client.query_opt(&stmt, &[&key])?;
             row.as_ref().map(Self::row_to_entry).transpose()
         })
-        .await?
+        .await
     }
 
     async fn list(
@@ -357,7 +376,7 @@ impl Memory for PostgresMemory {
         let category = category.map(Self::category_to_str);
         let sid = session_id.map(str::to_string);
 
-        tokio::task::spawn_blocking(move || -> Result<Vec<MemoryEntry>> {
+        Self::run_db_task("list", move || -> Result<Vec<MemoryEntry>> {
             let mut client = client.lock();
             let stmt = format!(
                 "
@@ -376,7 +395,7 @@ impl Memory for PostgresMemory {
                 .map(Self::row_to_entry)
                 .collect::<Result<Vec<MemoryEntry>>>()
         })
-        .await?
+        .await
     }
 
     async fn forget(&self, key: &str) -> Result<bool> {
@@ -384,20 +403,20 @@ impl Memory for PostgresMemory {
         let qualified_table = self.qualified_table.clone();
         let key = key.to_string();
 
-        tokio::task::spawn_blocking(move || -> Result<bool> {
+        Self::run_db_task("forget", move || -> Result<bool> {
             let mut client = client.lock();
             let stmt = format!("DELETE FROM {qualified_table} WHERE key = $1");
             let deleted = client.execute(&stmt, &[&key])?;
             Ok(deleted > 0)
         })
-        .await?
+        .await
     }
 
     async fn count(&self) -> Result<usize> {
         let client = self.client.clone();
         let qualified_table = self.qualified_table.clone();
 
-        tokio::task::spawn_blocking(move || -> Result<usize> {
+        Self::run_db_task("count", move || -> Result<usize> {
             let mut client = client.lock();
             let stmt = format!("SELECT COUNT(*) FROM {qualified_table}");
             let count: i64 = client.query_one(&stmt, &[])?.get(0);
@@ -405,14 +424,16 @@ impl Memory for PostgresMemory {
                 usize::try_from(count).context("PostgreSQL returned a negative memory count")?;
             Ok(count)
         })
-        .await?
+        .await
     }
 
     async fn health_check(&self) -> bool {
         let client = self.client.clone();
-        tokio::task::spawn_blocking(move || client.lock().simple_query("SELECT 1").is_ok())
-            .await
-            .unwrap_or(false)
+        Self::run_db_task("health-check", move || {
+            Ok(client.lock().simple_query("SELECT 1").is_ok())
+        })
+        .await
+        .unwrap_or(false)
     }
 }
 
