@@ -1,10 +1,10 @@
-# CI/Security Audit Event Schema
+# CI Audit Event Schema
 
-This document defines the normalized audit event envelope used by CI/CD and security workflows.
+This document defines the normalized audit event envelope used by active release workflows.
 
 ## Envelope
 
-All audit events emitted by `scripts/ci/emit_audit_event.py` follow this top-level schema:
+All audit events emitted by `scripts/ci/emit_audit_event.py` follow:
 
 ```json
 {
@@ -28,40 +28,15 @@ All audit events emitted by `scripts/ci/emit_audit_event.py` follow this top-lev
 }
 ```
 
-Notes:
+## Active Event Types
 
-- `artifact` is optional, but all CI/security audit lanes should populate it.
-- `payload` preserves the original per-lane report JSON.
-
-## Event Types
-
-Current event types include:
-
-- `ci_change_audit`
-- `provider_connectivity`
-- `reproducible_build`
-- `supply_chain_provenance`
-- `rollback_guard`
-- `deny_policy_guard`
-- `secrets_governance_guard`
-- `gitleaks_scan`
-- `sbom_snapshot`
-
-## Retention Policy
-
-Retention is encoded in workflow artifact uploads and mirrored into event metadata:
-
-| Workflow | Artifact/Event | Retention |
-| --- | --- | --- |
-| `ci-change-audit.yml` | `ci-change-audit*` | 14 days |
-| `ci-provider-connectivity.yml` | `provider-connectivity*` | 14 days |
-| `ci-reproducible-build.yml` | `reproducible-build*` | 14 days |
-| `sec-audit.yml` | deny/secrets/gitleaks/sbom artifacts | 14 days |
-| `ci-rollback.yml` | `ci-rollback-plan*` | 21 days |
-| `ci-supply-chain-provenance.yml` | `supply-chain-provenance` | 30 days |
+- `release_trigger_guard`
+- `release_artifact_guard_verify`
+- `release_artifact_guard_publish`
+- `release_sha256sums_provenance`
 
 ## Governance
 
-- Keep event payload schema stable and additive to avoid breaking downstream parsers.
-- Use pinned actions and deterministic artifact naming for all audit lanes.
-- Any retention policy change must be documented in this file and in `docs/ci-map.md`.
+- Keep schema stable and additive.
+- Keep artifact naming deterministic.
+- Document retention changes in this file and `docs/ci-map.md`.

@@ -101,9 +101,9 @@ zeroclaw service start
 
 5. If gateway is involved, verify bind/auth settings (`[gateway]`) and local reachability.
 
-## Secret Leak Incident Response (CI Gitleaks)
+## Secret Leak Incident Response (CI Security Finding)
 
-When `sec-audit.yml` reports a gitleaks finding or uploads SARIF alerts:
+When CI reports a gitleaks finding or uploads SARIF alerts:
 
 1. Confirm whether the finding is a true credential leak or a test/doc false positive:
    - review `gitleaks.sarif` + `gitleaks-summary.json` artifacts
