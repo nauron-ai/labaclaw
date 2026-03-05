@@ -80,7 +80,11 @@ impl PostgresQdrantHybridMemory {
                     tracing::info!(key = %key, "Skipping synced mark: superseded by newer pending state");
                     return Ok(());
                 }
-                if let Err(err) = self.sync_state.mark_synced(key).await {
+                if let Err(err) = self
+                    .sync_state
+                    .mark_synced(key, SyncOp::Upsert, Some(&hash))
+                    .await
+                {
                     tracing::warn!(key, error = %err, "Failed to mark sync state synced");
                 }
                 Ok(())
@@ -91,7 +95,11 @@ impl PostgresQdrantHybridMemory {
                     tracing::info!(key = %key, "Skipping failed mark: superseded by newer pending state");
                     return Ok(());
                 }
-                if let Err(sync_err) = self.sync_state.mark_failed(key, &err.to_string()).await {
+                if let Err(sync_err) = self
+                    .sync_state
+                    .mark_failed(key, &err.to_string(), SyncOp::Upsert, Some(&hash))
+                    .await
+                {
                     tracing::warn!(key, error = %sync_err, "Failed to mark sync state failed");
                 }
                 Err(err)
@@ -106,13 +114,21 @@ impl PostgresQdrantHybridMemory {
 
         match self.qdrant.forget(key).await {
             Ok(_) => {
-                if let Err(err) = self.sync_state.mark_synced(key).await {
+                if let Err(err) = self
+                    .sync_state
+                    .mark_synced(key, SyncOp::Delete, None)
+                    .await
+                {
                     tracing::warn!(key, error = %err, "Failed to mark sync state synced after delete");
                 }
             }
             Err(err) => {
                 tracing::warn!(key, error = %err, "Hybrid Qdrant delete failed");
-                if let Err(sync_err) = self.sync_state.mark_failed(key, &err.to_string()).await {
+                if let Err(sync_err) = self
+                    .sync_state
+                    .mark_failed(key, &err.to_string(), SyncOp::Delete, None)
+                    .await
+                {
                     tracing::warn!(key, error = %sync_err, "Failed to mark sync state failed after delete");
                 }
             }

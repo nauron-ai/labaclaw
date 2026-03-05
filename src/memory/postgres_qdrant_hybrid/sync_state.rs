@@ -4,6 +4,7 @@ use postgres::{Client, NoTls};
 use std::time::Duration;
 
 const POSTGRES_CONNECT_TIMEOUT_CAP_SECS: u64 = 300;
+const LAST_ERROR_MAX_CHARS: usize = 2048;
 
 #[derive(Debug, Clone, Copy)]
 pub enum SyncOp {
@@ -79,39 +80,69 @@ impl SyncStateStore {
         .await
     }
 
-    pub async fn mark_synced(&self, key: &str) -> Result<()> {
+    pub async fn mark_synced(
+        &self,
+        key: &str,
+        expected_op: SyncOp,
+        expected_content_hash: Option<&str>,
+    ) -> Result<()> {
         let key = key.to_string();
+        let expected_op = expected_op.as_str().to_string();
+        let expected_content_hash = expected_content_hash.map(str::to_string);
         let table = self.qualified_table.clone();
         self.run_db_task(move |client| {
             let now = Utc::now();
             let stmt = format!(
                 "UPDATE {table}
                  SET status='synced', last_error=NULL, last_synced_at=$2, updated_at=$2
-                 WHERE key=$1"
+                 WHERE key=$1
+                   AND status='pending'
+                   AND op=$3
+                   AND (
+                       ($4 IS NULL AND content_hash IS NULL)
+                       OR content_hash=$4
+                   )"
             );
-            let affected = client.execute(&stmt, &[&key, &now])?;
+            let affected = client.execute(&stmt, &[&key, &now, &expected_op, &expected_content_hash])?;
             if affected == 0 {
-                anyhow::bail!("sync state row not found for key '{key}' in {table}");
+                anyhow::bail!("sync state changed concurrently for key '{key}' in {table}");
             }
             Ok(())
         })
         .await
     }
 
-    pub async fn mark_failed(&self, key: &str, error: &str) -> Result<()> {
+    pub async fn mark_failed(
+        &self,
+        key: &str,
+        error: &str,
+        expected_op: SyncOp,
+        expected_content_hash: Option<&str>,
+    ) -> Result<()> {
         let key = key.to_string();
-        let error = error.to_string();
+        let error = sanitize_error_for_storage(error);
+        let expected_op = expected_op.as_str().to_string();
+        let expected_content_hash = expected_content_hash.map(str::to_string);
         let table = self.qualified_table.clone();
         self.run_db_task(move |client| {
             let now = Utc::now();
             let stmt = format!(
                 "UPDATE {table}
                  SET status='failed', last_error=$2, attempt_count=attempt_count+1, last_attempt_at=$3, updated_at=$3
-                 WHERE key=$1"
+                 WHERE key=$1
+                   AND status='pending'
+                   AND op=$4
+                   AND (
+                       ($5 IS NULL AND content_hash IS NULL)
+                       OR content_hash=$5
+                   )"
             );
-            let affected = client.execute(&stmt, &[&key, &error, &now])?;
+            let affected = client.execute(
+                &stmt,
+                &[&key, &error, &now, &expected_op, &expected_content_hash],
+            )?;
             if affected == 0 {
-                anyhow::bail!("sync state row not found for key '{key}' in {table}");
+                anyhow::bail!("sync state changed concurrently for key '{key}' in {table}");
             }
             Ok(())
         })
@@ -248,6 +279,23 @@ fn storage_tls_insecure_skip_verify() -> bool {
             )
         })
         .unwrap_or(false)
+}
+
+fn sanitize_error_for_storage(error: &str) -> String {
+    let mut out = String::with_capacity(error.len().min(LAST_ERROR_MAX_CHARS));
+    let mut count = 0usize;
+    for ch in error.chars() {
+        if count >= LAST_ERROR_MAX_CHARS {
+            break;
+        }
+        if ch.is_control() {
+            out.push(' ');
+        } else {
+            out.push(ch);
+        }
+        count += 1;
+    }
+    out.trim().to_string()
 }
 
 fn validate_identifier(value: &str, field_name: &str) -> Result<()> {
