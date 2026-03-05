@@ -26,7 +26,6 @@ pub mod gemini;
 pub mod health;
 pub mod ollama;
 pub mod openai;
-pub mod openai_codex;
 pub mod openrouter;
 pub mod quota_adapter;
 pub mod quota_cli;
@@ -1142,7 +1141,7 @@ pub fn create_provider_with_options(
 ) -> anyhow::Result<Box<dyn Provider>> {
     match name {
         "openai-codex" | "openai_codex" | "codex" => Ok(Box::new(
-            openai_codex::OpenAiCodexProvider::new(options, api_key)?,
+            openai::OpenAiCodexProvider::new(options, api_key)?,
         )),
         _ => create_provider_with_url_and_options(name, api_key, None, options),
     }
@@ -1186,7 +1185,7 @@ fn create_provider_with_url_and_options(
                 .filter(|value| !value.is_empty())
                 .map(ToString::to_string)
                 .or_else(|| options.provider_api_url.clone());
-            Ok(Box::new(openai_codex::OpenAiCodexProvider::new(
+            Ok(Box::new(openai::OpenAiCodexProvider::new(
                 &codex_options,
                 key,
             )?))

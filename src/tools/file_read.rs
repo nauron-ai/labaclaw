@@ -1210,7 +1210,7 @@ mod tests {
     async fn e2e_live_file_read_pdf() {
         use crate::agent::agent::Agent;
         use crate::agent::dispatcher::XmlToolDispatcher;
-        use crate::providers::openai_codex::OpenAiCodexProvider;
+        use crate::providers::openai::OpenAiCodexProvider;
         use crate::providers::{Provider, ProviderRuntimeOptions};
         use e2e_helpers::*;
 

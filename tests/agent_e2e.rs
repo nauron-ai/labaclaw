@@ -686,7 +686,7 @@ async fn e2e_empty_memory_context_passthrough() {
 #[tokio::test]
 #[ignore = "requires live OpenAI Codex API key"]
 async fn e2e_live_openai_codex_multi_turn() {
-    use zeroclaw::providers::openai_codex::OpenAiCodexProvider;
+    use zeroclaw::providers::openai::OpenAiCodexProvider;
     use zeroclaw::providers::traits::Provider;
 
     let provider = OpenAiCodexProvider::new(&ProviderRuntimeOptions::default(), None).unwrap();
@@ -740,7 +740,7 @@ async fn e2e_live_research_phase() {
     use zeroclaw::agent::research::{run_research_phase, should_trigger};
     use zeroclaw::config::{ResearchPhaseConfig, ResearchTrigger};
     use zeroclaw::observability::NoopObserver;
-    use zeroclaw::providers::openai_codex::OpenAiCodexProvider;
+    use zeroclaw::providers::openai::OpenAiCodexProvider;
     use zeroclaw::tools::{Tool, ToolResult};
 
     // ── Test should_trigger ──
