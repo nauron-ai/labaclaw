@@ -269,6 +269,28 @@ static CJK_SCRIPT_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]").unwrap()
 });
 
+/// Detect shell-like command lines returned without an actual tool call.
+/// This helps recover when the model prints a command (e.g. `systemctl ...`)
+/// instead of emitting the corresponding `shell` tool call payload.
+static SHELL_COMMAND_WITHOUT_TOOL_CALL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?ix)
+        ^
+        \s*
+        (?:sudo\s+)?
+        (?:
+            systemctl|journalctl|service|fail2ban-client|docker|kubectl|ssh|
+            ps|top|htop|df|du|free|uptime|tail|head|grep|awk|sed|cat|ls|
+            ip|ss|netstat|curl|wget|npm|pnpm|yarn|cargo|git
+        )
+        \b
+        [^\n]*
+        $
+        ",
+    )
+    .unwrap()
+});
+
 /// Scrub credentials from tool output to prevent accidental exfiltration.
 /// Replaces known credential patterns with a redacted placeholder while preserving
 /// a small prefix for context.
@@ -619,6 +641,10 @@ fn looks_like_deferred_action_without_tool_call(text: &str) -> bool {
     }
 
     if DEFERRED_ACTION_WITHOUT_TOOL_CALL_REGEX.is_match(trimmed) {
+        return true;
+    }
+
+    if SHELL_COMMAND_WITHOUT_TOOL_CALL_REGEX.is_match(trimmed) {
         return true;
     }
 
@@ -6812,6 +6838,12 @@ Done."#;
         assert!(looks_like_deferred_action_without_tool_call(
             "页面已打开，让我获取快照查看详细信息。"
         ));
+        assert!(looks_like_deferred_action_without_tool_call(
+            "systemctl status fail2ban"
+        ));
+        assert!(looks_like_deferred_action_without_tool_call(
+            "sudo journalctl -u fail2ban -n 100"
+        ));
     }
 
     #[test]
@@ -6821,6 +6853,9 @@ Done."#;
         ));
         assert!(!looks_like_deferred_action_without_tool_call(
             "最新结果已经在上面整理完成。"
+        ));
+        assert!(!looks_like_deferred_action_without_tool_call(
+            "Uruchom `systemctl status fail2ban`, żeby sprawdzić status."
         ));
     }
 

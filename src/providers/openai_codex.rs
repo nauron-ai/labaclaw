@@ -1,7 +1,10 @@
 use crate::auth::openai_oauth::extract_account_id_from_jwt;
 use crate::auth::AuthService;
 use crate::multimodal;
-use crate::providers::traits::{ChatMessage, Provider, ProviderCapabilities};
+use crate::providers::traits::{
+    ChatMessage, ChatResponse as ProviderChatResponse, NormalizedStopReason, Provider,
+    ProviderCapabilities, ToolCall as ProviderToolCall,
+};
 use crate::providers::ProviderRuntimeOptions;
 use async_trait::async_trait;
 use futures_util::{SinkExt, StreamExt};
@@ -95,17 +98,19 @@ struct ResponsesRequest {
     text: ResponsesTextOptions,
     reasoning: ResponsesReasoningOptions,
     include: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<Value>>,
     tool_choice: String,
     parallel_tool_calls: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct ResponsesInput {
     role: String,
     content: Vec<ResponsesInputContent>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct ResponsesInputContent {
     #[serde(rename = "type")]
     kind: String,
@@ -126,7 +131,7 @@ struct ResponsesReasoningOptions {
     summary: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct ResponsesResponse {
     #[serde(default)]
     output: Vec<ResponsesOutput>,
@@ -134,13 +139,23 @@ struct ResponsesResponse {
     output_text: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct ResponsesOutput {
+    #[serde(rename = "type")]
+    kind: Option<String>,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    call_id: Option<String>,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    arguments: Option<String>,
     #[serde(default)]
     content: Vec<ResponsesContent>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct ResponsesContent {
     #[serde(rename = "type")]
     kind: Option<String>,
@@ -503,6 +518,63 @@ fn extract_responses_text(response: &ResponsesResponse) -> Option<String> {
     None
 }
 
+fn normalize_tool_arguments(arguments: String, call_name: &str) -> String {
+    if serde_json::from_str::<Value>(&arguments).is_ok() {
+        arguments
+    } else {
+        tracing::warn!(
+            function = %call_name,
+            arguments = %arguments,
+            "Invalid JSON in OpenAI Codex tool-call arguments, using empty object"
+        );
+        "{}".to_string()
+    }
+}
+
+fn extract_responses_tool_calls(response: &ResponsesResponse) -> Vec<ProviderToolCall> {
+    response
+        .output
+        .iter()
+        .filter(|item| item.kind.as_deref() == Some("function_call"))
+        .filter_map(|item| {
+            let name = item.name.clone()?;
+            let arguments = item.arguments.clone().unwrap_or_else(|| "{}".to_string());
+            Some(ProviderToolCall {
+                id: item
+                    .call_id
+                    .clone()
+                    .or_else(|| item.id.clone())
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                name: name.clone(),
+                arguments: normalize_tool_arguments(arguments, &name),
+            })
+        })
+        .collect()
+}
+
+fn parse_responses_chat_response(response: ResponsesResponse) -> ProviderChatResponse {
+    let text = extract_responses_text(&response);
+    let tool_calls = extract_responses_tool_calls(&response);
+    let (stop_reason, raw_stop_reason) = if tool_calls.is_empty() {
+        (None, None)
+    } else {
+        (
+            Some(NormalizedStopReason::ToolCall),
+            Some("tool_calls".to_string()),
+        )
+    };
+
+    ProviderChatResponse {
+        text,
+        tool_calls,
+        usage: None,
+        reasoning_content: None,
+        quota_metadata: None,
+        stop_reason,
+        raw_stop_reason,
+    }
+}
+
 fn extract_stream_event_text(event: &Value, saw_delta: bool) -> Option<String> {
     let event_type = event.get("type").and_then(Value::as_str);
     match event_type {
@@ -520,27 +592,98 @@ fn extract_stream_event_text(event: &Value, saw_delta: bool) -> Option<String> {
     }
 }
 
-fn parse_sse_text(body: &str) -> anyhow::Result<Option<String>> {
-    let mut saw_delta = false;
-    let mut delta_accumulator = String::new();
-    let mut fallback_text = None;
-    let mut buffer = body.to_string();
+#[derive(Debug, Default)]
+struct ResponsesEventAccumulator {
+    saw_delta: bool,
+    delta_accumulator: String,
+    fallback_text: Option<String>,
+    output_items: Vec<ResponsesOutput>,
+}
 
-    let mut process_event = |event: Value| -> anyhow::Result<()> {
-        if let Some(message) = extract_stream_error_message(&event) {
-            return Err(anyhow::anyhow!("OpenAI Codex stream error: {message}"));
+impl ResponsesEventAccumulator {
+    fn final_text(&self) -> Option<String> {
+        if self.saw_delta {
+            nonempty_preserve(Some(&self.delta_accumulator))
+        } else {
+            self.fallback_text.clone()
         }
-        if let Some(text) = extract_stream_event_text(&event, saw_delta) {
+    }
+
+    fn fallback_response(&self) -> Option<ResponsesResponse> {
+        let output_text = self.final_text();
+        if output_text.is_none() && self.output_items.is_empty() {
+            return None;
+        }
+
+        Some(ResponsesResponse {
+            output: self.output_items.clone(),
+            output_text,
+        })
+    }
+
+    fn record_output_item(&mut self, event: &Value) -> anyhow::Result<()> {
+        let Some(event_type) = event.get("type").and_then(Value::as_str) else {
+            return Ok(());
+        };
+
+        if event_type != "response.output_item.done" {
+            return Ok(());
+        }
+
+        let item = event
+            .get("item")
+            .or_else(|| event.get("output_item"))
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("missing output item in OpenAI Codex stream event"))?;
+        let parsed = serde_json::from_value::<ResponsesOutput>(item).map_err(|error| {
+            anyhow::anyhow!("malformed OpenAI Codex output item in stream payload: {error}")
+        })?;
+        self.output_items.push(parsed);
+        Ok(())
+    }
+
+    fn apply_event(&mut self, event: Value) -> anyhow::Result<Option<ResponsesResponse>> {
+        if let Some(message) = extract_stream_error_message(&event) {
+            anyhow::bail!("OpenAI Codex stream error: {message}");
+        }
+
+        self.record_output_item(&event)?;
+
+        if let Some(text) = extract_stream_event_text(&event, self.saw_delta) {
             let event_type = event.get("type").and_then(Value::as_str);
             if event_type == Some("response.output_text.delta") {
-                saw_delta = true;
-                delta_accumulator.push_str(&text);
-            } else if fallback_text.is_none() {
-                fallback_text = Some(text);
+                self.saw_delta = true;
+                self.delta_accumulator.push_str(&text);
+            } else if self.fallback_text.is_none() {
+                self.fallback_text = Some(text);
             }
         }
-        Ok(())
-    };
+
+        let event_type = event.get("type").and_then(Value::as_str);
+        if event_type == Some("response.completed") || event_type == Some("response.done") {
+            if let Some(value) = event.get("response").cloned() {
+                let mut parsed = serde_json::from_value::<ResponsesResponse>(value).map_err(|e| {
+                    anyhow::anyhow!("malformed OpenAI Codex completed response payload: {e}")
+                })?;
+                if parsed.output_text.is_none() {
+                    parsed.output_text = self.final_text();
+                }
+                if parsed.output.is_empty() && !self.output_items.is_empty() {
+                    parsed.output = self.output_items.clone();
+                }
+                return Ok(Some(parsed));
+            }
+            return Ok(self.fallback_response());
+        }
+
+        Ok(None)
+    }
+}
+
+fn parse_sse_response(body: &str) -> anyhow::Result<Option<ResponsesResponse>> {
+    let mut accumulator = ResponsesEventAccumulator::default();
+    let mut completed_response: Option<ResponsesResponse> = None;
+    let mut buffer = body.to_string();
 
     let mut process_chunk = |chunk: &str| -> anyhow::Result<()> {
         let data_lines: Vec<String> = chunk
@@ -559,17 +702,35 @@ fn parse_sse_text(body: &str) -> anyhow::Result<Option<String>> {
         }
 
         if let Ok(event) = serde_json::from_str::<Value>(trimmed) {
-            return process_event(event);
+            if let Some(response) = accumulator.apply_event(event)? {
+                completed_response = Some(response);
+            }
+            return Ok(());
         }
 
+        let mut parsed_any = false;
         for line in data_lines {
             let line = line.trim();
             if line.is_empty() || line == "[DONE]" {
                 continue;
             }
             if let Ok(event) = serde_json::from_str::<Value>(line) {
-                process_event(event)?;
+                parsed_any = true;
+                if let Some(response) = accumulator.apply_event(event)? {
+                    completed_response = Some(response);
+                }
+            } else {
+                anyhow::bail!(
+                    "OpenAI Codex stream event parse failed: {}",
+                    super::sanitize_api_error(line)
+                );
             }
+        }
+        if !parsed_any {
+            anyhow::bail!(
+                "OpenAI Codex stream payload parse failed: {}",
+                super::sanitize_api_error(trimmed)
+            );
         }
 
         Ok(())
@@ -589,11 +750,11 @@ fn parse_sse_text(body: &str) -> anyhow::Result<Option<String>> {
         process_chunk(&buffer)?;
     }
 
-    if saw_delta {
-        return Ok(nonempty_preserve(Some(&delta_accumulator)));
+    if completed_response.is_some() {
+        return Ok(completed_response);
     }
 
-    Ok(fallback_text)
+    Ok(accumulator.fallback_response())
 }
 
 fn extract_stream_error_message(event: &Value) -> Option<String> {
@@ -627,11 +788,11 @@ fn extract_stream_error_message(event: &Value) -> Option<String> {
     None
 }
 
-async fn decode_responses_body(response: reqwest::Response) -> anyhow::Result<String> {
+async fn decode_responses_body(response: reqwest::Response) -> anyhow::Result<ProviderChatResponse> {
     let body = response.text().await?;
 
-    if let Some(text) = parse_sse_text(&body)? {
-        return Ok(text);
+    if let Some(parsed) = parse_sse_response(&body)? {
+        return Ok(parse_responses_chat_response(parsed));
     }
 
     let body_trimmed = body.trim_start();
@@ -649,7 +810,7 @@ async fn decode_responses_body(response: reqwest::Response) -> anyhow::Result<St
             super::sanitize_api_error(&body)
         )
     })?;
-    extract_responses_text(&parsed).ok_or_else(|| anyhow::anyhow!("No response from OpenAI Codex"))
+    Ok(parse_responses_chat_response(parsed))
 }
 
 impl OpenAiCodexProvider {
@@ -724,7 +885,7 @@ impl OpenAiCodexProvider {
         account_id: Option<&str>,
         access_token: Option<&str>,
         use_gateway_api_key_auth: bool,
-    ) -> Result<String, WebsocketRequestError> {
+    ) -> Result<ProviderChatResponse, WebsocketRequestError> {
         let ws_url = self
             .responses_websocket_url(model)
             .map_err(WebsocketRequestError::transport_unavailable)?;
@@ -742,18 +903,9 @@ impl OpenAiCodexProvider {
         )
         .map_err(WebsocketRequestError::transport_unavailable)?;
 
-        let payload = serde_json::json!({
-            "type": "response.create",
-            "model": &request.model,
-            "input": &request.input,
-            "instructions": &request.instructions,
-            "store": request.store,
-            "text": &request.text,
-            "reasoning": &request.reasoning,
-            "include": &request.include,
-            "tool_choice": &request.tool_choice,
-            "parallel_tool_calls": request.parallel_tool_calls,
-        });
+        let mut payload = serde_json::to_value(request)
+            .map_err(WebsocketRequestError::transport_unavailable)?;
+        payload["type"] = Value::String("response.create".to_string());
 
         let (mut ws_stream, _) = timeout(CODEX_WS_CONNECT_TIMEOUT, connect_async(ws_request))
             .await
@@ -781,9 +933,7 @@ impl OpenAiCodexProvider {
         })?
         .map_err(WebsocketRequestError::transport_unavailable)?;
 
-        let mut saw_delta = false;
-        let mut delta_accumulator = String::new();
-        let mut fallback_text: Option<String> = None;
+        let mut accumulator = ResponsesEventAccumulator::default();
         let mut timed_out = false;
 
         loop {
@@ -791,7 +941,7 @@ impl OpenAiCodexProvider {
                 Ok(frame) => frame,
                 Err(_) => {
                     let _ = ws_stream.close(None).await;
-                    if saw_delta || fallback_text.is_some() {
+                    if accumulator.final_text().is_some() || !accumulator.output_items.is_empty() {
                         timed_out = true;
                         break;
                     }
@@ -829,56 +979,17 @@ impl OpenAiCodexProvider {
                 _ => continue,
             };
 
-            if let Some(message) = extract_stream_error_message(&event) {
-                return Err(WebsocketRequestError::stream(anyhow::anyhow!(
-                    "OpenAI Codex websocket stream error: {message}"
-                )));
-            }
-
-            if let Some(text) = extract_stream_event_text(&event, saw_delta) {
-                let event_type = event.get("type").and_then(Value::as_str);
-                if event_type == Some("response.output_text.delta") {
-                    saw_delta = true;
-                    delta_accumulator.push_str(&text);
-                } else if fallback_text.is_none() {
-                    fallback_text = Some(text);
-                }
-            }
-
-            let event_type = event.get("type").and_then(Value::as_str);
-            if event_type == Some("response.completed") || event_type == Some("response.done") {
-                if let Some(response_value) = event.get("response").cloned() {
-                    if let Ok(parsed) = serde_json::from_value::<ResponsesResponse>(response_value)
-                    {
-                        if let Some(text) = extract_responses_text(&parsed) {
-                            let _ = ws_stream.close(None).await;
-                            return Ok(text);
-                        }
-                    }
-                }
-
-                if saw_delta {
-                    let _ = ws_stream.close(None).await;
-                    return nonempty_preserve(Some(&delta_accumulator)).ok_or_else(|| {
-                        WebsocketRequestError::stream(anyhow::anyhow!(
-                            "No response from OpenAI Codex"
-                        ))
-                    });
-                }
-                if let Some(text) = fallback_text.clone() {
-                    let _ = ws_stream.close(None).await;
-                    return Ok(text);
-                }
+            if let Some(response) = accumulator
+                .apply_event(event)
+                .map_err(WebsocketRequestError::stream)?
+            {
+                let _ = ws_stream.close(None).await;
+                return Ok(parse_responses_chat_response(response));
             }
         }
 
-        if saw_delta {
-            return nonempty_preserve(Some(&delta_accumulator)).ok_or_else(|| {
-                WebsocketRequestError::stream(anyhow::anyhow!("No response from OpenAI Codex"))
-            });
-        }
-        if let Some(text) = fallback_text {
-            return Ok(text);
+        if let Some(response) = accumulator.fallback_response() {
+            return Ok(parse_responses_chat_response(response));
         }
         if timed_out {
             return Err(WebsocketRequestError::stream(anyhow::anyhow!(
@@ -898,7 +1009,7 @@ impl OpenAiCodexProvider {
         account_id: Option<&str>,
         access_token: Option<&str>,
         use_gateway_api_key_auth: bool,
-    ) -> anyhow::Result<String> {
+    ) -> anyhow::Result<ProviderChatResponse> {
         let mut request_builder = self
             .client
             .post(&self.responses_url)
@@ -935,7 +1046,8 @@ impl OpenAiCodexProvider {
         input: Vec<ResponsesInput>,
         instructions: String,
         model: &str,
-    ) -> anyhow::Result<String> {
+        tools: Option<&[Value]>,
+    ) -> anyhow::Result<ProviderChatResponse> {
         let use_gateway_api_key_auth = self.custom_endpoint && self.gateway_api_key.is_some();
         let profile = match self
             .auth
@@ -1007,6 +1119,9 @@ impl OpenAiCodexProvider {
                 summary: "auto".to_string(),
             },
             include: vec!["reasoning.encrypted_content".to_string()],
+            tools: tools
+                .map(|tool_list| tool_list.to_vec())
+                .filter(|tool_list| !tool_list.is_empty()),
             tool_choice: "auto".to_string(),
             parallel_tool_calls: true,
         };
@@ -1077,7 +1192,7 @@ impl OpenAiCodexProvider {
 impl Provider for OpenAiCodexProvider {
     fn capabilities(&self) -> ProviderCapabilities {
         ProviderCapabilities {
-            native_tool_calling: false,
+            native_tool_calling: true,
             vision: true,
         }
     }
@@ -1106,8 +1221,12 @@ impl Provider for OpenAiCodexProvider {
         .await?;
 
         let (instructions, input) = build_responses_input(&prepared.messages);
-        self.send_responses_request(input, instructions, model)
-            .await
+        let response = self
+            .send_responses_request(input, instructions, model, None)
+            .await?;
+        response
+            .text
+            .ok_or_else(|| anyhow::anyhow!("No text response from OpenAI Codex"))
     }
 
     async fn chat_with_history(
@@ -1126,8 +1245,37 @@ impl Provider for OpenAiCodexProvider {
         .await?;
 
         let (instructions, input) = build_responses_input(&prepared.messages);
-        self.send_responses_request(input, instructions, model)
-            .await
+        let response = self
+            .send_responses_request(input, instructions, model, None)
+            .await?;
+        response
+            .text
+            .ok_or_else(|| anyhow::anyhow!("No text response from OpenAI Codex"))
+    }
+
+    async fn chat_with_tools(
+        &self,
+        messages: &[ChatMessage],
+        tools: &[Value],
+        model: &str,
+        _temperature: f64,
+    ) -> anyhow::Result<ProviderChatResponse> {
+        let config = crate::config::MultimodalConfig::default();
+        let prepared = crate::multimodal::prepare_messages_for_provider_with_provider_hint(
+            messages,
+            &config,
+            Some("openai"),
+        )
+        .await?;
+
+        let (instructions, input) = build_responses_input(&prepared.messages);
+        let mut response = self
+            .send_responses_request(input, instructions, model, Some(tools))
+            .await?;
+        if !response.tool_calls.is_empty() {
+            response.text = None;
+        }
+        Ok(response)
     }
 }
 
@@ -1182,6 +1330,11 @@ mod tests {
     fn extracts_nested_output_text() {
         let response = ResponsesResponse {
             output: vec![ResponsesOutput {
+                kind: None,
+                id: None,
+                call_id: None,
+                name: None,
+                arguments: None,
                 content: vec![ResponsesContent {
                     kind: Some("output_text".into()),
                     text: Some("nested".into()),
@@ -1190,6 +1343,67 @@ mod tests {
             output_text: None,
         };
         assert_eq!(extract_responses_text(&response).as_deref(), Some("nested"));
+    }
+
+    #[test]
+    fn extracts_function_calls_from_response_output() {
+        let response = ResponsesResponse {
+            output: vec![ResponsesOutput {
+                kind: Some("function_call".into()),
+                id: Some("item_1".into()),
+                call_id: Some("call_1".into()),
+                name: Some("shell".into()),
+                arguments: Some("{\"command\":\"date\"}".into()),
+                content: vec![],
+            }],
+            output_text: None,
+        };
+
+        let calls = extract_responses_tool_calls(&response);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].id, "call_1");
+        assert_eq!(calls[0].name, "shell");
+        assert_eq!(calls[0].arguments, "{\"command\":\"date\"}");
+    }
+
+    #[test]
+    fn parse_response_prefers_tool_calls_and_marks_stop_reason() {
+        let response = ResponsesResponse {
+            output: vec![ResponsesOutput {
+                kind: Some("function_call".into()),
+                id: Some("item_2".into()),
+                call_id: Some("call_2".into()),
+                name: Some("shell".into()),
+                arguments: Some("{\"command\":\"uptime\"}".into()),
+                content: vec![],
+            }],
+            output_text: Some("I will check uptime now".into()),
+        };
+
+        let parsed = parse_responses_chat_response(response);
+        assert_eq!(parsed.tool_calls.len(), 1);
+        assert_eq!(parsed.text.as_deref(), Some("I will check uptime now"));
+        assert_eq!(parsed.stop_reason, Some(NormalizedStopReason::ToolCall));
+        assert_eq!(parsed.raw_stop_reason.as_deref(), Some("tool_calls"));
+    }
+
+    #[test]
+    fn invalid_tool_arguments_are_normalized_to_empty_object() {
+        let response = ResponsesResponse {
+            output: vec![ResponsesOutput {
+                kind: Some("function_call".into()),
+                id: None,
+                call_id: Some("call_bad".into()),
+                name: Some("shell".into()),
+                arguments: Some("{not json}".into()),
+                content: vec![],
+            }],
+            output_text: None,
+        };
+
+        let calls = extract_responses_tool_calls(&response);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].arguments, "{}");
     }
 
     #[test]
@@ -1440,7 +1654,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_sse_text_reads_output_text_delta() {
+    fn parse_sse_response_reads_output_text_delta() {
         let payload = r#"data: {"type":"response.created","response":{"id":"resp_123"}}
 
 data: {"type":"response.output_text.delta","delta":"Hello"}
@@ -1450,18 +1664,55 @@ data: [DONE]
 "#;
 
         assert_eq!(
-            parse_sse_text(payload).unwrap().as_deref(),
+            parse_sse_response(payload)
+                .unwrap()
+                .and_then(|response| extract_responses_text(&response))
+                .as_deref(),
             Some("Hello world")
         );
     }
 
     #[test]
-    fn parse_sse_text_falls_back_to_completed_response() {
+    fn parse_sse_response_falls_back_to_completed_response() {
         let payload = r#"data: {"type":"response.completed","response":{"output_text":"Done"}}
 data: [DONE]
 "#;
 
-        assert_eq!(parse_sse_text(payload).unwrap().as_deref(), Some("Done"));
+        assert_eq!(
+            parse_sse_response(payload)
+                .unwrap()
+                .and_then(|response| extract_responses_text(&response))
+                .as_deref(),
+            Some("Done")
+        );
+    }
+
+    #[test]
+    fn parse_sse_response_reads_function_call_output_item() {
+        let payload = r#"data: {"type":"response.output_item.done","item":{"type":"function_call","call_id":"call_sse","name":"shell","arguments":"{\"command\":\"whoami\"}"}}
+data: {"type":"response.completed","response":{"output":[]}}
+data: [DONE]
+"#;
+
+        let response = parse_sse_response(payload)
+            .expect("payload should parse")
+            .expect("response should exist");
+        let calls = extract_responses_tool_calls(&response);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].id, "call_sse");
+        assert_eq!(calls[0].name, "shell");
+    }
+
+    #[test]
+    fn parse_sse_response_fails_on_malformed_output_item() {
+        let payload = r#"data: {"type":"response.output_item.done","item":{"type":"function_call","call_id":"call_bad","name":"shell","arguments":123}}
+data: [DONE]
+"#;
+
+        let error = parse_sse_response(payload).expect_err("malformed item must fail");
+        assert!(error
+            .to_string()
+            .contains("malformed OpenAI Codex output item"));
     }
 
     #[test]
@@ -1609,7 +1860,7 @@ data: [DONE]
             OpenAiCodexProvider::new(&options, None).expect("provider should initialize");
         let caps = provider.capabilities();
 
-        assert!(!caps.native_tool_calling);
+        assert!(caps.native_tool_calling);
         assert!(caps.vision);
     }
 }
