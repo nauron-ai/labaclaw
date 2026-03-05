@@ -201,11 +201,9 @@ fn convert_tool_specs(tools: Option<&[crate::tools::ToolSpec]>) -> Vec<Value> {
         .map(|tool| {
             serde_json::json!({
                 "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.parameters,
-                }
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.parameters,
             })
         })
         .collect()
@@ -1775,10 +1773,10 @@ data: [DONE]
         let converted = convert_tool_specs(Some(&tools));
         assert_eq!(converted.len(), 1);
         assert_eq!(converted[0]["type"], "function");
-        assert_eq!(converted[0]["function"]["name"], "shell");
-        assert_eq!(converted[0]["function"]["description"], "Run shell command");
+        assert_eq!(converted[0]["name"], "shell");
+        assert_eq!(converted[0]["description"], "Run shell command");
         assert_eq!(
-            converted[0]["function"]["parameters"]["required"][0],
+            converted[0]["parameters"]["required"][0],
             "command"
         );
     }
