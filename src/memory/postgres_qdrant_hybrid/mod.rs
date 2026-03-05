@@ -69,8 +69,17 @@ impl PostgresQdrantHybridMemory {
             tracing::warn!(key, error = %err, "Failed to mark sync state pending for upsert");
         }
 
+        if !self.sync_state.is_pending_upsert_hash(key, &hash).await? {
+            tracing::info!(key = %key, "Skipping Qdrant upsert: superseded by newer pending state");
+            return Ok(());
+        }
+
         match self.qdrant.store(key, content, category, session_id).await {
             Ok(_) => {
+                if !self.sync_state.is_pending_upsert_hash(key, &hash).await? {
+                    tracing::info!(key = %key, "Skipping synced mark: superseded by newer pending state");
+                    return Ok(());
+                }
                 if let Err(err) = self.sync_state.mark_synced(key).await {
                     tracing::warn!(key, error = %err, "Failed to mark sync state synced");
                 }
@@ -78,6 +87,10 @@ impl PostgresQdrantHybridMemory {
             }
             Err(err) => {
                 tracing::warn!(key, error = %err, "Hybrid Qdrant upsert failed");
+                if !self.sync_state.is_pending_upsert_hash(key, &hash).await? {
+                    tracing::info!(key = %key, "Skipping failed mark: superseded by newer pending state");
+                    return Ok(());
+                }
                 if let Err(sync_err) = self.sync_state.mark_failed(key, &err.to_string()).await {
                     tracing::warn!(key, error = %sync_err, "Failed to mark sync state failed");
                 }

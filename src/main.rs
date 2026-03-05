@@ -176,7 +176,7 @@ enum Commands {
         /// Model ID override (used in quick mode)
         #[arg(long)]
         model: Option<String>,
-        /// Memory backend (sqlite, sqlite_qdrant_hybrid, postgres_qdrant_hybrid, lucid, markdown, none) - used in quick mode, default: sqlite
+        /// Memory backend (sqlite, sqlite_qdrant_hybrid, postgres_qdrant_hybrid, lucid, cortex-mem, postgres, qdrant, markdown, none) - used in quick mode, default: sqlite
         #[arg(long)]
         memory: Option<String>,
 
@@ -252,7 +252,7 @@ Examples:
         #[arg(long)]
         compact_context: bool,
 
-        /// Memory backend (sqlite, sqlite_qdrant_hybrid, postgres_qdrant_hybrid, postgres, qdrant, markdown, none)
+        /// Memory backend (sqlite, sqlite_qdrant_hybrid, postgres_qdrant_hybrid, lucid, cortex-mem, postgres, qdrant, markdown, none)
         #[arg(long)]
         memory_backend: Option<String>,
     },

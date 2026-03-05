@@ -109,6 +109,26 @@ impl SyncStateStore {
         .await
     }
 
+    pub async fn is_pending_upsert_hash(&self, key: &str, expected_hash: &str) -> Result<bool> {
+        let key = key.to_string();
+        let expected_hash = expected_hash.to_string();
+        let table = self.qualified_table.clone();
+        self.run_db_task(move |client| {
+            let stmt = format!("SELECT op, status, content_hash FROM {table} WHERE key=$1");
+            let row = client.query_opt(&stmt, &[&key])?;
+            let Some(row) = row else {
+                return Ok(false);
+            };
+            let op: String = row.get(0);
+            let status: String = row.get(1);
+            let hash: Option<String> = row.get(2);
+            Ok(op == SyncOp::Upsert.as_str()
+                && status == "pending"
+                && hash.as_deref() == Some(expected_hash.as_str()))
+        })
+        .await
+    }
+
     fn init_schema(&self) -> Result<()> {
         let table = self.qualified_table.clone();
         self.run_db_task_sync(move |client| {
