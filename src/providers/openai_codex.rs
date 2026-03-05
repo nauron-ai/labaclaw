@@ -2,8 +2,8 @@ use crate::auth::openai_oauth::extract_account_id_from_jwt;
 use crate::auth::AuthService;
 use crate::multimodal;
 use crate::providers::traits::{
-    ChatMessage, ChatResponse as ProviderChatResponse, NormalizedStopReason, Provider,
-    ProviderCapabilities, ToolCall as ProviderToolCall,
+    ChatMessage, ChatRequest as ProviderChatRequest, ChatResponse as ProviderChatResponse,
+    NormalizedStopReason, Provider, ProviderCapabilities, ToolCall as ProviderToolCall,
 };
 use crate::providers::ProviderRuntimeOptions;
 use async_trait::async_trait;
@@ -192,6 +192,23 @@ impl OpenAiCodexProvider {
                 .unwrap_or_else(|_| Client::new()),
         })
     }
+}
+
+fn convert_tool_specs(tools: Option<&[crate::tools::ToolSpec]>) -> Vec<Value> {
+    tools
+        .unwrap_or_default()
+        .iter()
+        .map(|tool| {
+            serde_json::json!({
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.parameters,
+                }
+            })
+        })
+        .collect()
 }
 
 fn default_zeroclaw_dir() -> PathBuf {
@@ -1277,6 +1294,32 @@ impl Provider for OpenAiCodexProvider {
         }
         Ok(response)
     }
+
+    async fn chat(
+        &self,
+        request: ProviderChatRequest<'_>,
+        model: &str,
+        temperature: f64,
+    ) -> anyhow::Result<ProviderChatResponse> {
+        let tools = convert_tool_specs(request.tools);
+        if tools.is_empty() {
+            let text = self
+                .chat_with_history(request.messages, model, temperature)
+                .await?;
+            return Ok(ProviderChatResponse {
+                text: Some(text),
+                tool_calls: vec![],
+                usage: None,
+                reasoning_content: None,
+                quota_metadata: None,
+                stop_reason: None,
+                raw_stop_reason: None,
+            });
+        }
+
+        self.chat_with_tools(request.messages, &tools, model, temperature)
+            .await
+    }
 }
 
 #[cfg(test)]
@@ -1713,6 +1756,31 @@ data: [DONE]
         assert!(error
             .to_string()
             .contains("malformed OpenAI Codex output item"));
+    }
+
+    #[test]
+    fn convert_tool_specs_maps_toolspec_to_openai_function_shape() {
+        let tools = vec![crate::tools::ToolSpec {
+            name: "shell".to_string(),
+            description: "Run shell command".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string"}
+                },
+                "required": ["command"]
+            }),
+        }];
+
+        let converted = convert_tool_specs(Some(&tools));
+        assert_eq!(converted.len(), 1);
+        assert_eq!(converted[0]["type"], "function");
+        assert_eq!(converted[0]["function"]["name"], "shell");
+        assert_eq!(converted[0]["function"]["description"], "Run shell command");
+        assert_eq!(
+            converted[0]["function"]["parameters"]["required"][0],
+            "command"
+        );
     }
 
     #[test]
