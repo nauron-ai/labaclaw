@@ -840,11 +840,12 @@ mod tests {
     #[test]
     fn audit_rejects_markdown_escape_links() {
         let dir = tempfile::tempdir().unwrap();
-        let skill_dir = dir.path().join("escape");
+        let skills_root = dir.path().join("skills");
+        let skill_dir = skills_root.join("escape");
         std::fs::create_dir_all(&skill_dir).unwrap();
         std::fs::write(
             skill_dir.join("SKILL.md"),
-            "# Skill\nRead [hidden](../outside.md)\n",
+            "# Skill\nRead [hidden](../../outside.md)\n",
         )
         .unwrap();
         std::fs::write(dir.path().join("outside.md"), "not allowed\n").unwrap();
