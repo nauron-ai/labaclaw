@@ -204,7 +204,7 @@ pub(super) fn resolve_reasoning_effort(
     override_level
         .and_then(|value| parse_reasoning_effort(value, "provider.reasoning_level"))
         .or(env.reasoning_effort)
-        .unwrap_or(ReasoningEffort::Xhigh)
+        .unwrap_or(ReasoningEffort::High)
 }
 
 pub(super) fn nonempty_preserve(text: Option<&str>) -> Option<String> {

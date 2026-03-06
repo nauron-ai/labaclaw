@@ -4,6 +4,7 @@ use super::super::config::{
     resolve_instructions, resolve_reasoning_effort, resolve_responses_url, resolve_transport_mode,
     CodexEnvConfig,
 };
+use super::super::request::effective_reasoning_effort;
 use super::super::{
     CodexTransport, OpenAiCodexProvider, ReasoningEffort, CODEX_BASE_URL_ENV,
     CODEX_PROVIDER_TRANSPORT_ENV, CODEX_RESPONSES_URL_ENV, CODEX_TRANSPORT_ENV,
@@ -186,6 +187,15 @@ fn resolve_reasoning_effort_falls_back_to_env_when_override_invalid() {
 }
 
 #[test]
+fn resolve_reasoning_effort_defaults_to_high() {
+    let _env_lock = env_lock();
+    let _reasoning_guard = EnvGuard::set("ZEROCLAW_CODEX_REASONING_EFFORT", None);
+    let env = CodexEnvConfig::load().unwrap();
+
+    assert_eq!(resolve_reasoning_effort(None, &env), ReasoningEffort::High);
+}
+
+#[test]
 fn resolve_codex_config_loads_env_once_for_init() {
     let _env_lock = env_lock();
     let _url_guard = EnvGuard::set(CODEX_RESPONSES_URL_ENV, Some("https://env.example.com/v1"));
@@ -197,4 +207,32 @@ fn resolve_codex_config_loads_env_once_for_init() {
     assert_eq!(resolved.responses_url, "https://env.example.com/v1/responses");
     assert_eq!(resolved.transport, CodexTransport::WebSocket);
     assert_eq!(resolved.reasoning_effort, ReasoningEffort::High);
+}
+
+#[test]
+fn effective_reasoning_effort_clamps_legacy_codex_models() {
+    assert_eq!(
+        effective_reasoning_effort("gpt-5-codex", ReasoningEffort::Xhigh),
+        ReasoningEffort::High
+    );
+    assert_eq!(
+        effective_reasoning_effort("codex-1p-q-20251024-ev3", ReasoningEffort::Xhigh),
+        ReasoningEffort::High
+    );
+    assert_eq!(
+        effective_reasoning_effort("gpt-5.1-codex-mini", ReasoningEffort::Minimal),
+        ReasoningEffort::High
+    );
+}
+
+#[test]
+fn effective_reasoning_effort_preserves_supported_levels() {
+    assert_eq!(
+        effective_reasoning_effort("gpt-5.4", ReasoningEffort::Xhigh),
+        ReasoningEffort::Xhigh
+    );
+    assert_eq!(
+        effective_reasoning_effort("gpt-5.3-codex", ReasoningEffort::Xhigh),
+        ReasoningEffort::Xhigh
+    );
 }

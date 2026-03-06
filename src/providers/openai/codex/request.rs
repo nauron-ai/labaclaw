@@ -53,8 +53,10 @@ impl ResponsesRequest {
         reasoning_effort: ReasoningEffort,
         tools: Option<Vec<Value>>,
     ) -> Self {
+        let model = model.into();
+        let reasoning_effort = effective_reasoning_effort(&model, reasoning_effort);
         Self {
-            model: model.into(),
+            model,
             input,
             instructions: instructions.into(),
             store: false,
@@ -182,6 +184,50 @@ pub(super) enum ReasoningEffort {
     Medium,
     High,
     Xhigh,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ReasoningPolicy {
+    supports_minimal: bool,
+    supports_xhigh: bool,
+}
+
+impl ReasoningPolicy {
+    const fn standard() -> Self {
+        Self { supports_minimal: true, supports_xhigh: true }
+    }
+
+    const fn high_capped() -> Self {
+        Self { supports_minimal: false, supports_xhigh: false }
+    }
+
+    fn normalize(self, requested: ReasoningEffort) -> ReasoningEffort {
+        match requested {
+            ReasoningEffort::Minimal if !self.supports_minimal => ReasoningEffort::High,
+            ReasoningEffort::Xhigh if !self.supports_xhigh => ReasoningEffort::High,
+            _ => requested,
+        }
+    }
+}
+
+pub(super) fn effective_reasoning_effort(
+    model: &str,
+    requested: ReasoningEffort,
+) -> ReasoningEffort {
+    reasoning_policy(model).normalize(requested)
+}
+
+fn reasoning_policy(model: &str) -> ReasoningPolicy {
+    let model_id = model.rsplit('/').next().unwrap_or(model);
+    if matches!(
+        model_id,
+        "gpt-5-codex" | "gpt-5.1" | "gpt-5.1-codex-mini"
+    ) || model_id.starts_with("codex-1p-")
+    {
+        return ReasoningPolicy::high_capped();
+    }
+
+    ReasoningPolicy::standard()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
