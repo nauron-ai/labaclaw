@@ -49,10 +49,22 @@ fn convert_tool_specs_adds_items_for_array_without_items() {
 #[test]
 fn build_responses_input_maps_content_types_by_role() {
     let messages = vec![
-        ChatMessage { role: "system".into(), content: "You are helpful.".into() },
-        ChatMessage { role: "user".into(), content: "Hi".into() },
-        ChatMessage { role: "assistant".into(), content: "Hello!".into() },
-        ChatMessage { role: "user".into(), content: "Thanks".into() },
+        ChatMessage {
+            role: "system".into(),
+            content: "You are helpful.".into(),
+        },
+        ChatMessage {
+            role: "user".into(),
+            content: "Hi".into(),
+        },
+        ChatMessage {
+            role: "assistant".into(),
+            content: "Hello!".into(),
+        },
+        ChatMessage {
+            role: "user".into(),
+            content: "Thanks".into(),
+        },
     ];
 
     let (instructions, input) = build_responses_input(&messages).unwrap();
@@ -73,7 +85,10 @@ fn build_responses_input_maps_content_types_by_role() {
 
 #[test]
 fn build_responses_input_uses_default_instructions_without_system() {
-    let messages = vec![ChatMessage { role: "user".into(), content: "Hello".into() }];
+    let messages = vec![ChatMessage {
+        role: "user".into(),
+        content: "Hello".into(),
+    }];
     let (instructions, input) = build_responses_input(&messages).unwrap();
     assert_eq!(instructions, super::super::DEFAULT_CODEX_INSTRUCTIONS);
     assert_eq!(input.len(), 1);
@@ -82,8 +97,14 @@ fn build_responses_input_uses_default_instructions_without_system() {
 #[test]
 fn build_responses_input_ignores_unknown_roles() {
     let messages = vec![
-        ChatMessage { role: "tool".into(), content: "result".into() },
-        ChatMessage { role: "user".into(), content: "Go".into() },
+        ChatMessage {
+            role: "tool".into(),
+            content: "result".into(),
+        },
+        ChatMessage {
+            role: "user".into(),
+            content: "Go".into(),
+        },
     ];
 
     let (instructions, input) = build_responses_input(&messages).unwrap();
@@ -105,7 +126,10 @@ fn build_responses_input_parses_native_tool_result_payload() {
     assert_eq!(input.len(), 1);
     let json = serde_json::to_value(&input[0]).unwrap();
     assert_eq!(json["role"], "user");
-    assert_eq!(json["content"][0]["text"], "[tool_result:call_123]\nuptime output");
+    assert_eq!(
+        json["content"][0]["text"],
+        "[tool_result:call_123]\nuptime output"
+    );
 }
 
 #[test]
@@ -123,13 +147,21 @@ fn build_responses_input_strips_assistant_native_payload_wrapper() {
 
 #[test]
 fn build_responses_input_handles_image_markers() {
-    let messages = vec![ChatMessage::user("Describe this\n\n[IMAGE:data:image/png;base64,abc]")];
+    let messages = vec![ChatMessage::user(
+        "Describe this\n\n[IMAGE:data:image/png;base64,abc]",
+    )];
     let (_, input) = build_responses_input(&messages).unwrap();
 
     assert_eq!(input.len(), 1);
     assert_eq!(input[0].role(), ResponsesRole::User);
-    assert_eq!(input[0].content()[0].kind(), ResponsesInputContentKind::InputText);
-    assert_eq!(input[0].content()[1].kind(), ResponsesInputContentKind::InputImage);
+    assert_eq!(
+        input[0].content()[0].kind(),
+        ResponsesInputContentKind::InputText
+    );
+    assert_eq!(
+        input[0].content()[1].kind(),
+        ResponsesInputContentKind::InputImage
+    );
 }
 
 #[test]
@@ -163,20 +195,17 @@ fn build_responses_input_fails_on_malformed_assistant_payload() {
 
 #[test]
 fn build_responses_input_fails_on_malformed_tool_payload() {
-    let messages = vec![ChatMessage::tool(r#"{"tool_call_id":123,"content":"done"}"#)];
+    let messages = vec![ChatMessage::tool(
+        r#"{"tool_call_id":123,"content":"done"}"#,
+    )];
     let error = build_responses_input(&messages).expect_err("malformed payload must fail");
     assert!(error.to_string().contains("invalid field type"));
 }
 
 #[test]
 fn websocket_create_event_flattens_request_payload() {
-    let request = ResponsesRequest::new(
-        "gpt-5.3-codex",
-        vec![],
-        "test",
-        ReasoningEffort::High,
-        None,
-    );
+    let request =
+        ResponsesRequest::new("gpt-5.3-codex", vec![], "test", ReasoningEffort::High, None);
 
     let payload = serde_json::to_value(ResponsesCreateEvent::new(&request)).unwrap();
     assert_eq!(payload["type"], "response.create");

@@ -84,7 +84,9 @@ pub(in crate::providers::openai) fn parse_assistant_tool_calls_payload(
     let reasoning_content =
         optional_string_field(&map, ASSISTANT_PAYLOAD_CONTEXT, "reasoning_content")?;
     let tool_calls = serde_json::from_value::<Vec<ProviderToolCall>>(
-        map.get("tool_calls").cloned().expect("candidate key must exist"),
+        map.get("tool_calls")
+            .cloned()
+            .expect("candidate key must exist"),
     )
     .map_err(|source| OpenAiPayloadParseError::InvalidShape {
         context: ASSISTANT_PAYLOAD_CONTEXT,
@@ -105,7 +107,8 @@ pub(in crate::providers::openai) fn parse_tool_result_payload(
         raw,
         TOOL_RESULT_PAYLOAD_CONTEXT,
         &["tool_call_id", "toolUseId", "tool_use_id"],
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
 
@@ -136,9 +139,8 @@ fn parse_candidate_object(
         return Ok(None);
     }
 
-    let parsed = serde_json::from_str::<Value>(trimmed).map_err(|source| {
-        OpenAiPayloadParseError::InvalidJson { context, source }
-    })?;
+    let parsed = serde_json::from_str::<Value>(trimmed)
+        .map_err(|source| OpenAiPayloadParseError::InvalidJson { context, source })?;
     let Value::Object(map) = parsed else {
         return Err(OpenAiPayloadParseError::InvalidShape {
             context,

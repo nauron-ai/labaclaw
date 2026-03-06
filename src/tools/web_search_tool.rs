@@ -224,13 +224,14 @@ impl WebSearchTool {
         let mut chain: Vec<&'static str> = Vec::new();
         let mut seen: HashSet<&'static str> = HashSet::new();
 
-        for raw in std::iter::once(self.provider.as_str()).chain(
-            self.fallback_providers
-                .iter()
-                .map(std::string::String::as_str),
-        ).chain(
-            self.implicit_fallback_providers().iter().copied(),
-        ) {
+        for raw in std::iter::once(self.provider.as_str())
+            .chain(
+                self.fallback_providers
+                    .iter()
+                    .map(std::string::String::as_str),
+            )
+            .chain(self.implicit_fallback_providers().iter().copied())
+        {
             let normalized = Self::normalize_provider(raw).ok_or_else(|| {
                 anyhow::anyhow!(
                     "Unknown search provider '{raw}'. Supported: duckduckgo, brave, firecrawl, tavily, perplexity, exa, jina"
@@ -1301,7 +1302,10 @@ mod tests {
             Vec::new(),
         );
 
-        assert_eq!(tool.provider_chain().unwrap(), vec!["firecrawl", "duckduckgo"]);
+        assert_eq!(
+            tool.provider_chain().unwrap(),
+            vec!["firecrawl", "duckduckgo"]
+        );
     }
 
     #[test]

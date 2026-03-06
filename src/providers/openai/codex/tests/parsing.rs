@@ -1,10 +1,10 @@
+use super::super::accumulator::ResponsesEventAccumulator;
 use super::super::payload::{
     extract_responses_text, extract_responses_tool_calls, parse_responses_chat_response,
 };
 use super::super::response::{
     ResponsesContent, ResponsesOutput, ResponsesOutputKind, ResponsesResponse,
 };
-use super::super::accumulator::ResponsesEventAccumulator;
 use super::super::stream::parse_sse_response;
 use crate::providers::traits::NormalizedStopReason;
 
@@ -167,5 +167,7 @@ data: [DONE]
 "#;
 
     let error = parse_sse_response(payload).expect_err("malformed item must fail");
-    assert!(error.to_string().contains("malformed OpenAI Codex output item"));
+    assert!(error
+        .to_string()
+        .contains("malformed OpenAI Codex output item"));
 }

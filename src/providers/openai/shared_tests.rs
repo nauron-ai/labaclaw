@@ -51,5 +51,8 @@ fn invalid_field_type_returns_error() {
 #[test]
 fn module_stays_under_250_loc_budget() {
     let loc = include_str!("shared.rs").lines().count();
-    assert!(loc <= 250, "openai/shared.rs exceeded 250 LOC budget: {loc}");
+    assert!(
+        loc <= 250,
+        "openai/shared.rs exceeded 250 LOC budget: {loc}"
+    );
 }

@@ -87,7 +87,10 @@ pub(super) struct ResponsesCreateEvent<'a> {
 
 impl<'a> ResponsesCreateEvent<'a> {
     pub(super) fn new(request: &'a ResponsesRequest) -> Self {
-        Self { kind: ResponsesClientEventKind::ResponseCreate, request }
+        Self {
+            kind: ResponsesClientEventKind::ResponseCreate,
+            request,
+        }
     }
 }
 
@@ -102,8 +105,12 @@ impl ResponsesInput {
         Self { role, content }
     }
 
-    pub(super) fn role(&self) -> ResponsesRole { self.role }
-    pub(super) fn content(&self) -> &[ResponsesInputContent] { &self.content }
+    pub(super) fn role(&self) -> ResponsesRole {
+        self.role
+    }
+    pub(super) fn content(&self) -> &[ResponsesInputContent] {
+        &self.content
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -118,25 +125,43 @@ pub(super) struct ResponsesInputContent {
 
 impl ResponsesInputContent {
     pub(super) fn input_text(text: impl Into<String>) -> Self {
-        Self::new(ResponsesInputContentKind::InputText, Some(text.into()), None)
+        Self::new(
+            ResponsesInputContentKind::InputText,
+            Some(text.into()),
+            None,
+        )
     }
 
     pub(super) fn output_text(text: impl Into<String>) -> Self {
-        Self::new(ResponsesInputContentKind::OutputText, Some(text.into()), None)
+        Self::new(
+            ResponsesInputContentKind::OutputText,
+            Some(text.into()),
+            None,
+        )
     }
 
     pub(super) fn input_image(image_url: impl Into<String>) -> Self {
-        Self::new(ResponsesInputContentKind::InputImage, None, Some(image_url.into()))
+        Self::new(
+            ResponsesInputContentKind::InputImage,
+            None,
+            Some(image_url.into()),
+        )
     }
 
-    pub(super) fn kind(&self) -> ResponsesInputContentKind { self.kind }
+    pub(super) fn kind(&self) -> ResponsesInputContentKind {
+        self.kind
+    }
 
     fn new(
         kind: ResponsesInputContentKind,
         text: Option<String>,
         image_url: Option<String>,
     ) -> Self {
-        Self { kind, text, image_url }
+        Self {
+            kind,
+            text,
+            image_url,
+        }
     }
 }
 
@@ -161,7 +186,9 @@ struct ResponsesTextOptions {
 }
 impl ResponsesTextOptions {
     fn medium() -> Self {
-        Self { verbosity: ResponsesVerbosity::Medium }
+        Self {
+            verbosity: ResponsesVerbosity::Medium,
+        }
     }
 }
 
@@ -172,7 +199,10 @@ struct ResponsesReasoningOptions {
 }
 impl ResponsesReasoningOptions {
     fn new(effort: ReasoningEffort) -> Self {
-        Self { effort, summary: ResponsesReasoningSummary::Auto }
+        Self {
+            effort,
+            summary: ResponsesReasoningSummary::Auto,
+        }
     }
 }
 
@@ -194,11 +224,17 @@ struct ReasoningPolicy {
 
 impl ReasoningPolicy {
     const fn standard() -> Self {
-        Self { supports_minimal: true, supports_xhigh: true }
+        Self {
+            supports_minimal: true,
+            supports_xhigh: true,
+        }
     }
 
     const fn high_capped() -> Self {
-        Self { supports_minimal: false, supports_xhigh: false }
+        Self {
+            supports_minimal: false,
+            supports_xhigh: false,
+        }
     }
 
     fn normalize(self, requested: ReasoningEffort) -> ReasoningEffort {
@@ -219,10 +255,8 @@ pub(super) fn effective_reasoning_effort(
 
 fn reasoning_policy(model: &str) -> ReasoningPolicy {
     let model_id = model.rsplit('/').next().unwrap_or(model);
-    if matches!(
-        model_id,
-        "gpt-5-codex" | "gpt-5.1" | "gpt-5.1-codex-mini"
-    ) || model_id.starts_with("codex-1p-")
+    if matches!(model_id, "gpt-5-codex" | "gpt-5.1" | "gpt-5.1-codex-mini")
+        || model_id.starts_with("codex-1p-")
     {
         return ReasoningPolicy::high_capped();
     }

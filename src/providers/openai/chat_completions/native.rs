@@ -1,8 +1,6 @@
-use super::OpenAiProvider;
-use super::request::{
-    MessageRole, NativeMessage, NativeToolCall, NativeToolSpec,
-};
+use super::request::{MessageRole, NativeMessage, NativeToolCall, NativeToolSpec};
 use super::response::{NativeChoice, NativeResponseMessage};
+use super::OpenAiProvider;
 use crate::providers::openai::shared::{
     parse_assistant_tool_calls_payload, parse_tool_result_payload,
 };

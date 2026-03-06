@@ -31,8 +31,18 @@ pub(super) struct ChatRequest {
 }
 
 impl ChatRequest {
-    pub(super) fn new(model: impl Into<String>, messages: Vec<Message>, temperature: f64, max_tokens: Option<u32>) -> Self {
-        Self { model: model.into(), messages, temperature, max_tokens }
+    pub(super) fn new(
+        model: impl Into<String>,
+        messages: Vec<Message>,
+        temperature: f64,
+        max_tokens: Option<u32>,
+    ) -> Self {
+        Self {
+            model: model.into(),
+            messages,
+            temperature,
+            max_tokens,
+        }
     }
 }
 
@@ -43,9 +53,18 @@ pub(super) struct Message {
 }
 
 impl Message {
-    pub(super) fn system(content: impl Into<String>) -> Self { Self::new(MessageRole::System, content) }
-    pub(super) fn user(content: impl Into<String>) -> Self { Self::new(MessageRole::User, content) }
-    fn new(role: MessageRole, content: impl Into<String>) -> Self { Self { role, content: content.into() } }
+    pub(super) fn system(content: impl Into<String>) -> Self {
+        Self::new(MessageRole::System, content)
+    }
+    pub(super) fn user(content: impl Into<String>) -> Self {
+        Self::new(MessageRole::User, content)
+    }
+    fn new(role: MessageRole, content: impl Into<String>) -> Self {
+        Self {
+            role,
+            content: content.into(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -95,18 +114,42 @@ pub(super) struct NativeMessage {
 
 impl NativeMessage {
     pub(super) fn plain(role: MessageRole, content: impl Into<String>) -> Self {
-        Self { role, content: Some(content.into()), tool_call_id: None, tool_calls: None, reasoning_content: None }
+        Self {
+            role,
+            content: Some(content.into()),
+            tool_call_id: None,
+            tool_calls: None,
+            reasoning_content: None,
+        }
     }
 
-    pub(super) fn assistant_tool_calls(content: Option<String>, reasoning_content: Option<String>, tool_calls: Vec<NativeToolCall>) -> Self {
-        Self { role: MessageRole::Assistant, content, tool_call_id: None, tool_calls: Some(tool_calls), reasoning_content }
+    pub(super) fn assistant_tool_calls(
+        content: Option<String>,
+        reasoning_content: Option<String>,
+        tool_calls: Vec<NativeToolCall>,
+    ) -> Self {
+        Self {
+            role: MessageRole::Assistant,
+            content,
+            tool_call_id: None,
+            tool_calls: Some(tool_calls),
+            reasoning_content,
+        }
     }
 
     pub(super) fn tool_result(content: Option<String>, tool_call_id: Option<String>) -> Self {
-        Self { role: MessageRole::Tool, content, tool_call_id, tool_calls: None, reasoning_content: None }
+        Self {
+            role: MessageRole::Tool,
+            content,
+            tool_call_id,
+            tool_calls: None,
+            reasoning_content: None,
+        }
     }
 
-    pub(super) fn reasoning_content(&self) -> Option<&str> { self.reasoning_content.as_deref() }
+    pub(super) fn reasoning_content(&self) -> Option<&str> {
+        self.reasoning_content.as_deref()
+    }
 }
 
 #[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
@@ -123,12 +166,23 @@ pub(super) struct NativeToolSpec {
 }
 
 impl NativeToolSpec {
-    pub(super) fn new_function(name: impl Into<String>, description: impl Into<String>, parameters: serde_json::Value) -> Self {
-        Self { kind: NativeToolKind::Function, function: NativeToolFunctionSpec::new(name, description, parameters) }
+    pub(super) fn new_function(
+        name: impl Into<String>,
+        description: impl Into<String>,
+        parameters: serde_json::Value,
+    ) -> Self {
+        Self {
+            kind: NativeToolKind::Function,
+            function: NativeToolFunctionSpec::new(name, description, parameters),
+        }
     }
 
-    pub(super) fn kind(&self) -> NativeToolKind { self.kind }
-    pub(super) fn function(&self) -> &NativeToolFunctionSpec { &self.function }
+    pub(super) fn kind(&self) -> NativeToolKind {
+        self.kind
+    }
+    pub(super) fn function(&self) -> &NativeToolFunctionSpec {
+        &self.function
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
@@ -145,11 +199,21 @@ pub(super) struct NativeToolFunctionSpec {
 }
 
 impl NativeToolFunctionSpec {
-    pub(super) fn new(name: impl Into<String>, description: impl Into<String>, parameters: serde_json::Value) -> Self {
-        Self { name: name.into(), description: description.into(), parameters }
+    pub(super) fn new(
+        name: impl Into<String>,
+        description: impl Into<String>,
+        parameters: serde_json::Value,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            description: description.into(),
+            parameters,
+        }
     }
 
-    pub(super) fn name(&self) -> &str { &self.name }
+    pub(super) fn name(&self) -> &str {
+        &self.name
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -162,11 +226,21 @@ pub(super) struct NativeToolCall {
 }
 
 impl NativeToolCall {
-    pub(super) fn function_call(id: Option<String>, name: impl Into<String>, arguments: impl Into<String>) -> Self {
-        Self { id, kind: Some(NativeToolKind::Function), function: NativeFunctionCall::new(name, arguments) }
+    pub(super) fn function_call(
+        id: Option<String>,
+        name: impl Into<String>,
+        arguments: impl Into<String>,
+    ) -> Self {
+        Self {
+            id,
+            kind: Some(NativeToolKind::Function),
+            function: NativeFunctionCall::new(name, arguments),
+        }
     }
 
-    pub(super) fn into_parts(self) -> (Option<String>, NativeFunctionCall) { (self.id, self.function) }
+    pub(super) fn into_parts(self) -> (Option<String>, NativeFunctionCall) {
+        (self.id, self.function)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -176,6 +250,13 @@ pub(super) struct NativeFunctionCall {
 }
 
 impl NativeFunctionCall {
-    fn new(name: impl Into<String>, arguments: impl Into<String>) -> Self { Self { name: name.into(), arguments: arguments.into() } }
-    pub(super) fn into_parts(self) -> (String, String) { (self.name, self.arguments) }
+    fn new(name: impl Into<String>, arguments: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            arguments: arguments.into(),
+        }
+    }
+    pub(super) fn into_parts(self) -> (String, String) {
+        (self.name, self.arguments)
+    }
 }

@@ -1,10 +1,8 @@
-use super::DEFAULT_CODEX_INSTRUCTIONS;
 use super::config::first_nonempty;
 use super::request::{ResponsesInput, ResponsesInputContent, ResponsesRole};
-use super::response::{
-    ResponsesContentKind, ResponsesOutput, ResponsesResponse,
-};
+use super::response::{ResponsesContentKind, ResponsesOutput, ResponsesResponse};
 use super::schema::normalize_responses_tool_schema;
+use super::DEFAULT_CODEX_INSTRUCTIONS;
 use crate::multimodal;
 use crate::providers::openai::shared::{
     parse_assistant_tool_calls_payload, parse_tool_result_payload,

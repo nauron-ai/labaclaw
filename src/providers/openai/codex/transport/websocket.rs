@@ -1,10 +1,10 @@
 use super::super::accumulator::ResponsesEventAccumulator;
+use super::super::payload::parse_responses_chat_response;
 use super::super::request::{ResponsesCreateEvent, ResponsesRequest};
 use super::super::{
-    CODEX_WS_CONNECT_TIMEOUT, CODEX_WS_READ_TIMEOUT, CODEX_WS_SEND_TIMEOUT,
-    OpenAiCodexProvider, WebsocketRequestError,
+    OpenAiCodexProvider, WebsocketRequestError, CODEX_WS_CONNECT_TIMEOUT, CODEX_WS_READ_TIMEOUT,
+    CODEX_WS_SEND_TIMEOUT,
 };
-use super::super::payload::parse_responses_chat_response;
 use crate::providers::traits::ChatResponse as ProviderChatResponse;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;

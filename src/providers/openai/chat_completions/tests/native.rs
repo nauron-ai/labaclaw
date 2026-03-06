@@ -21,7 +21,9 @@ async fn chat_with_tools_fails_without_key() {
         }
     })];
 
-    let result = provider.chat_with_tools(&messages, &tools, "gpt-4o", 0.7).await;
+    let result = provider
+        .chat_with_tools(&messages, &tools, "gpt-4o", 0.7)
+        .await;
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("API key not set"));
 }
@@ -42,7 +44,9 @@ async fn chat_with_tools_rejects_invalid_tool_shape() {
         }
     })];
 
-    let result = provider.chat_with_tools(&messages, &tools, "gpt-4o", 0.7).await;
+    let result = provider
+        .chat_with_tools(&messages, &tools, "gpt-4o", 0.7)
+        .await;
     assert!(result.is_err());
     assert!(result
         .unwrap_err()
@@ -123,15 +127,17 @@ fn convert_messages_no_reasoning_content_when_absent() {
 #[test]
 fn convert_messages_fails_on_malformed_assistant_structured_payload() {
     let messages = vec![ChatMessage::assistant(r#"{"tool_calls":123}"#)];
-    let error = OpenAiProvider::convert_messages(&messages)
-        .expect_err("malformed payload must fail");
+    let error =
+        OpenAiProvider::convert_messages(&messages).expect_err("malformed payload must fail");
     assert!(error.to_string().contains("invalid shape"));
 }
 
 #[test]
 fn convert_messages_fails_on_malformed_tool_result_payload() {
-    let messages = vec![ChatMessage::tool(r#"{"tool_call_id":123,"content":"done"}"#)];
-    let error = OpenAiProvider::convert_messages(&messages)
-        .expect_err("malformed payload must fail");
+    let messages = vec![ChatMessage::tool(
+        r#"{"tool_call_id":123,"content":"done"}"#,
+    )];
+    let error =
+        OpenAiProvider::convert_messages(&messages).expect_err("malformed payload must fail");
     assert!(error.to_string().contains("invalid field type"));
 }

@@ -6,7 +6,10 @@ use crate::providers::traits::Provider;
 #[test]
 fn creates_with_key() {
     let provider = OpenAiProvider::new(Some("openai-test-credential"));
-    assert_eq!(provider.credential.as_deref(), Some("openai-test-credential"));
+    assert_eq!(
+        provider.credential.as_deref(),
+        Some("openai-test-credential")
+    );
 }
 
 #[test]
@@ -24,7 +27,9 @@ fn creates_with_empty_key() {
 #[tokio::test]
 async fn chat_fails_without_key() {
     let provider = OpenAiProvider::new(None);
-    let result = provider.chat_with_system(None, "hello", "gpt-4o", 0.7).await;
+    let result = provider
+        .chat_with_system(None, "hello", "gpt-4o", 0.7)
+        .await;
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("API key not set"));
 }
@@ -88,9 +93,11 @@ fn response_deserializes_multiple_choices() {
 #[test]
 fn response_with_unicode() {
     let response: ChatResponse =
-        serde_json::from_str(r#"{"choices":[{"message":{"content":"Hello \u03A9"}}]}"#)
-            .unwrap();
-    assert_eq!(response.choices()[0].message().effective_content(), "Hello \u{03A9}");
+        serde_json::from_str(r#"{"choices":[{"message":{"content":"Hello \u03A9"}}]}"#).unwrap();
+    assert_eq!(
+        response.choices()[0].message().effective_content(),
+        "Hello \u{03A9}"
+    );
 }
 
 #[test]
@@ -98,7 +105,10 @@ fn response_with_long_content() {
     let long = "x".repeat(100_000);
     let json = format!(r#"{{"choices":[{{"message":{{"content":"{long}"}}}}]}}"#);
     let response: ChatResponse = serde_json::from_str(&json).unwrap();
-    assert_eq!(response.choices()[0].message().content().unwrap().len(), 100_000);
+    assert_eq!(
+        response.choices()[0].message().content().unwrap().len(),
+        100_000
+    );
 }
 
 #[tokio::test]

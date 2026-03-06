@@ -9,16 +9,16 @@ use reqwest::Client;
 use serde_json::Value;
 use std::time::Duration;
 
+mod accumulator;
 mod config;
 mod payload;
+mod request;
+mod response;
 mod schema;
-mod accumulator;
 mod stream;
 #[cfg(test)]
 mod tests;
 mod transport;
-mod request;
-mod response;
 
 use payload::{build_responses_input, convert_tool_specs};
 use request::{CodexTransport, ReasoningEffort};

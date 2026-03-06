@@ -9,7 +9,10 @@ fn reasoning_content_fallback_empty_content() {
         r#"{"choices":[{"message":{"content":"","reasoning_content":"Thinking..."}}]}"#,
     )
     .unwrap();
-    assert_eq!(response.choices()[0].message().effective_content(), "Thinking...");
+    assert_eq!(
+        response.choices()[0].message().effective_content(),
+        "Thinking..."
+    );
 }
 
 #[test]
@@ -18,7 +21,10 @@ fn reasoning_content_fallback_null_content() {
         r#"{"choices":[{"message":{"content":null,"reasoning_content":"Thinking..."}}]}"#,
     )
     .unwrap();
-    assert_eq!(response.choices()[0].message().effective_content(), "Thinking...");
+    assert_eq!(
+        response.choices()[0].message().effective_content(),
+        "Thinking..."
+    );
 }
 
 #[test]
@@ -37,7 +43,10 @@ fn native_response_reasoning_content_fallback() {
     )
     .unwrap();
     let message = response.choices()[0].message();
-    assert_eq!(message.effective_content(), Some("Native thinking".to_string()));
+    assert_eq!(
+        message.effective_content(),
+        Some("Native thinking".to_string())
+    );
 }
 
 #[test]

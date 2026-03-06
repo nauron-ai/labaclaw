@@ -70,7 +70,10 @@ impl NativeChatResponse {
     }
 
     pub(super) fn into_first_choice_and_usage(self) -> Option<(NativeChoice, Option<UsageInfo>)> {
-        self.choices.into_iter().next().map(|choice| (choice, self.usage))
+        self.choices
+            .into_iter()
+            .next()
+            .map(|choice| (choice, self.usage))
     }
 }
 

@@ -1,5 +1,5 @@
-use super::common::{env_lock, EnvGuard};
 use super::super::{OpenAiCodexProvider, CODEX_BASE_URL_ENV, CODEX_RESPONSES_URL_ENV};
+use super::common::{env_lock, EnvGuard};
 use crate::providers::traits::Provider;
 use crate::providers::ProviderRuntimeOptions;
 

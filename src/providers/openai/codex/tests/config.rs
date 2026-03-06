@@ -1,4 +1,3 @@
-use super::common::{env_lock, EnvGuard};
 use super::super::config::{
     build_responses_url, default_zeroclaw_dir, is_default_responses_url, resolve_codex_config,
     resolve_instructions, resolve_reasoning_effort, resolve_responses_url, resolve_transport_mode,
@@ -10,6 +9,7 @@ use super::super::{
     CODEX_PROVIDER_TRANSPORT_ENV, CODEX_RESPONSES_URL_ENV, CODEX_TRANSPORT_ENV,
     DEFAULT_CODEX_INSTRUCTIONS, DEFAULT_CODEX_RESPONSES_URL,
 };
+use super::common::{env_lock, EnvGuard};
 use crate::providers::ProviderRuntimeOptions;
 
 #[test]
@@ -159,7 +159,10 @@ fn resolve_instructions_uses_default_when_blank() {
 
 #[test]
 fn resolve_instructions_uses_system_prompt_when_present() {
-    assert_eq!(resolve_instructions(Some("Be strict")), "Be strict".to_string());
+    assert_eq!(
+        resolve_instructions(Some("Be strict")),
+        "Be strict".to_string()
+    );
 }
 
 #[test]
@@ -204,7 +207,10 @@ fn resolve_codex_config_loads_env_once_for_init() {
 
     let resolved = resolve_codex_config(&ProviderRuntimeOptions::default())
         .expect("codex init config should resolve");
-    assert_eq!(resolved.responses_url, "https://env.example.com/v1/responses");
+    assert_eq!(
+        resolved.responses_url,
+        "https://env.example.com/v1/responses"
+    );
     assert_eq!(resolved.transport, CodexTransport::WebSocket);
     assert_eq!(resolved.reasoning_effort, ReasoningEffort::High);
 }

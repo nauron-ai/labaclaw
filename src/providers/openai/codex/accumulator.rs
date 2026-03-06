@@ -20,18 +20,28 @@ impl ResponsesEventAccumulator {
         }
     }
 
-    pub(super) fn has_output_items(&self) -> bool { !self.output_items.is_empty() }
-    pub(super) fn has_partial_output(&self) -> bool { self.final_text().is_some() || self.has_output_items() }
+    pub(super) fn has_output_items(&self) -> bool {
+        !self.output_items.is_empty()
+    }
+    pub(super) fn has_partial_output(&self) -> bool {
+        self.final_text().is_some() || self.has_output_items()
+    }
 
     pub(super) fn fallback_response(&self) -> Option<ResponsesResponse> {
         let output_text = self.final_text();
         if output_text.is_none() && self.output_items.is_empty() {
             return None;
         }
-        Some(ResponsesResponse::new(self.output_items.clone(), output_text))
+        Some(ResponsesResponse::new(
+            self.output_items.clone(),
+            output_text,
+        ))
     }
 
-    pub(super) fn apply_event(&mut self, event: Value) -> anyhow::Result<Option<ResponsesResponse>> {
+    pub(super) fn apply_event(
+        &mut self,
+        event: Value,
+    ) -> anyhow::Result<Option<ResponsesResponse>> {
         if let Some(message) = extract_stream_error_message(&event) {
             anyhow::bail!("OpenAI Codex stream error: {message}");
         }

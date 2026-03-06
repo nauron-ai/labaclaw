@@ -81,7 +81,11 @@ fn process_sse_chunk(
         }
     }
 
-    if parsed_any { Ok(()) } else { Err(stream_parse_error(trimmed)) }
+    if parsed_any {
+        Ok(())
+    } else {
+        Err(stream_parse_error(trimmed))
+    }
 }
 
 fn stream_parse_error(payload: &str) -> anyhow::Error {
@@ -91,10 +95,14 @@ fn stream_parse_error(payload: &str) -> anyhow::Error {
     )
 }
 
-fn sse_chunks(body: &str) -> impl Iterator<Item = &str> { body.split("\n\n") }
+fn sse_chunks(body: &str) -> impl Iterator<Item = &str> {
+    body.split("\n\n")
+}
 
 fn data_lines(chunk: &str) -> impl Iterator<Item = &str> {
-    chunk.lines().filter_map(|line| line.strip_prefix("data:").map(str::trim))
+    chunk
+        .lines()
+        .filter_map(|line| line.strip_prefix("data:").map(str::trim))
 }
 
 struct SseChunkData<'a> {
@@ -127,6 +135,14 @@ fn extract_chunk_data(chunk: &str) -> Option<SseChunkData<'_>> {
     }
 
     combined
-        .map(|payload| SseChunkData { payload: Cow::Owned(payload), multiline })
-        .or_else(|| first.map(|payload| SseChunkData { payload: Cow::Borrowed(payload), multiline }))
+        .map(|payload| SseChunkData {
+            payload: Cow::Owned(payload),
+            multiline,
+        })
+        .or_else(|| {
+            first.map(|payload| SseChunkData {
+                payload: Cow::Borrowed(payload),
+                multiline,
+            })
+        })
 }

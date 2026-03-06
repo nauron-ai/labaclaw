@@ -11,10 +11,17 @@ pub(super) struct ResponsesResponse {
 
 impl ResponsesResponse {
     pub(super) fn new(output: Vec<ResponsesOutput>, output_text: Option<String>) -> Self {
-        Self { output, output_text }
+        Self {
+            output,
+            output_text,
+        }
     }
-    pub(super) fn output_text(&self) -> Option<&str> { self.output_text.as_deref() }
-    pub(super) fn outputs(&self) -> &[ResponsesOutput] { &self.output }
+    pub(super) fn output_text(&self) -> Option<&str> {
+        self.output_text.as_deref()
+    }
+    pub(super) fn outputs(&self) -> &[ResponsesOutput] {
+        &self.output
+    }
     pub(super) fn into_parts(self) -> (Vec<ResponsesOutput>, Option<String>) {
         (self.output, self.output_text)
     }
@@ -45,15 +52,34 @@ impl ResponsesOutput {
         arguments: Option<String>,
         content: Vec<ResponsesContent>,
     ) -> Self {
-        Self { kind, id, call_id, name, arguments, content }
+        Self {
+            kind,
+            id,
+            call_id,
+            name,
+            arguments,
+            content,
+        }
     }
 
-    pub(super) fn is_function_call(&self) -> bool { self.kind == ResponsesOutputKind::FunctionCall }
-    pub(super) fn item_id(&self) -> Option<&str> { self.id.as_deref() }
-    pub(super) fn call_id(&self) -> Option<&str> { self.call_id.as_deref() }
-    pub(super) fn call_name(&self) -> Option<&str> { self.name.as_deref() }
-    pub(super) fn call_arguments(&self) -> Option<&str> { self.arguments.as_deref() }
-    pub(super) fn content(&self) -> &[ResponsesContent] { &self.content }
+    pub(super) fn is_function_call(&self) -> bool {
+        self.kind == ResponsesOutputKind::FunctionCall
+    }
+    pub(super) fn item_id(&self) -> Option<&str> {
+        self.id.as_deref()
+    }
+    pub(super) fn call_id(&self) -> Option<&str> {
+        self.call_id.as_deref()
+    }
+    pub(super) fn call_name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+    pub(super) fn call_arguments(&self) -> Option<&str> {
+        self.arguments.as_deref()
+    }
+    pub(super) fn content(&self) -> &[ResponsesContent] {
+        &self.content
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -65,10 +91,17 @@ pub(super) struct ResponsesContent {
 
 impl ResponsesContent {
     pub(super) fn output_text(text: impl Into<String>) -> Self {
-        Self { kind: ResponsesContentKind::OutputText, text: Some(text.into()) }
+        Self {
+            kind: ResponsesContentKind::OutputText,
+            text: Some(text.into()),
+        }
     }
-    pub(super) fn text(&self) -> Option<&str> { self.text.as_deref() }
-    pub(super) fn kind(&self) -> ResponsesContentKind { self.kind }
+    pub(super) fn text(&self) -> Option<&str> {
+        self.text.as_deref()
+    }
+    pub(super) fn kind(&self) -> ResponsesContentKind {
+        self.kind
+    }
 }
 
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
