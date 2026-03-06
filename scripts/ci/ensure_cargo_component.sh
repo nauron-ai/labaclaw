@@ -59,11 +59,6 @@ install_component_or_fail() {
     fi
 }
 
-probe_rustdoc() {
-    local toolchain="$1"
-    component_installed "${toolchain}" "rust-docs"
-}
-
 ensure_required_tooling() {
     local toolchain="$1"
     local required_components="${2:-}"
@@ -83,21 +78,12 @@ ensure_required_tooling() {
             return 1
         fi
     fi
-
-    if [[ " ${required_components} " == *" rust-docs "* ]] && ! probe_rustdoc "${toolchain}"; then
-        echo "::error::rustdoc is unavailable for toolchain ${toolchain}."
-        install_component_or_fail "${toolchain}" "rust-docs" || return 1
-        if ! probe_rustdoc "${toolchain}"; then
-            return 1
-        fi
-    fi
 }
 
 default_required_components() {
     local normalized_job_name="${1:-}"
     local components=()
     [[ "${normalized_job_name}" == *lint* ]] && components+=("rustfmt")
-    [[ "${normalized_job_name}" == *test* ]] && components+=("rust-docs")
     echo "${components[*]}"
 }
 
