@@ -75,18 +75,18 @@ pub struct PostgresMemory {
     qualified_table: String,
 }
 
-struct PostgresClientHolder {
+pub(in crate::memory) struct PostgresClientHolder {
     client: Mutex<Option<Client>>,
 }
 
 impl PostgresClientHolder {
-    fn new(client: Client) -> Self {
+    pub(in crate::memory) fn new(client: Client) -> Self {
         Self {
             client: Mutex::new(Some(client)),
         }
     }
 
-    fn with_client<T, F>(&self, operation: F) -> Result<T>
+    pub(in crate::memory) fn with_client<T, F>(&self, operation: F) -> Result<T>
     where
         F: FnOnce(&mut Client) -> Result<T>,
     {
@@ -152,6 +152,10 @@ impl PostgresMemory {
             client: Arc::new(PostgresClientHolder::new(client)),
             qualified_table,
         })
+    }
+
+    pub(in crate::memory) fn shared_client(&self) -> Arc<PostgresClientHolder> {
+        self.client.clone()
     }
 
     fn initialize_client(
@@ -284,7 +288,7 @@ impl PostgresMemory {
     }
 }
 
-fn validate_identifier(value: &str, field_name: &str) -> Result<()> {
+pub(in crate::memory) fn validate_identifier(value: &str, field_name: &str) -> Result<()> {
     if value.is_empty() {
         anyhow::bail!("{field_name} must not be empty");
     }
@@ -307,7 +311,7 @@ fn validate_identifier(value: &str, field_name: &str) -> Result<()> {
     Ok(())
 }
 
-fn quote_identifier(value: &str) -> String {
+pub(in crate::memory) fn quote_identifier(value: &str) -> String {
     format!("\"{value}\"")
 }
 

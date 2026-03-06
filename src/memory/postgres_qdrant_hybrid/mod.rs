@@ -1,5 +1,4 @@
 mod sync_state;
-mod tls;
 
 use super::postgres::PostgresMemory;
 use super::qdrant::QdrantMemory;
@@ -28,7 +27,7 @@ impl PostgresQdrantHybridMemory {
         qdrant: QdrantMemory,
     ) -> Result<Self> {
         let postgres = PostgresMemory::new(db_url, schema, table, connect_timeout_secs, tls_mode)?;
-        let sync_state = SyncStateStore::new(db_url, schema, connect_timeout_secs, tls_mode)?;
+        let sync_state = SyncStateStore::new(postgres.shared_client(), schema)?;
         Ok(Self {
             postgres: Arc::new(postgres),
             qdrant: Arc::new(qdrant),
@@ -114,11 +113,7 @@ impl PostgresQdrantHybridMemory {
 
         match self.qdrant.forget(key).await {
             Ok(_) => {
-                if let Err(err) = self
-                    .sync_state
-                    .mark_synced(key, SyncOp::Delete, None)
-                    .await
-                {
+                if let Err(err) = self.sync_state.mark_synced(key, SyncOp::Delete, None).await {
                     tracing::warn!(key, error = %err, "Failed to mark sync state synced after delete");
                 }
             }

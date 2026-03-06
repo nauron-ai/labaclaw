@@ -1,9 +1,9 @@
+use super::super::postgres::{quote_identifier, validate_identifier, PostgresClientHolder};
 use anyhow::{Context, Result};
 use chrono::Utc;
-use postgres::{Client, NoTls};
-use std::time::Duration;
+use postgres::Client;
+use std::sync::Arc;
 
-const POSTGRES_CONNECT_TIMEOUT_CAP_SECS: u64 = 300;
 const LAST_ERROR_MAX_CHARS: usize = 2048;
 
 #[derive(Debug, Clone, Copy)]
@@ -23,25 +23,16 @@ impl SyncOp {
 
 #[derive(Clone)]
 pub struct SyncStateStore {
-    db_url: String,
-    connect_timeout_secs: Option<u64>,
-    tls_mode: bool,
+    client: Arc<PostgresClientHolder>,
     qualified_table: String,
 }
 
 impl SyncStateStore {
-    pub fn new(
-        db_url: &str,
-        schema: &str,
-        connect_timeout_secs: Option<u64>,
-        tls_mode: bool,
-    ) -> Result<Self> {
+    pub fn new(client: Arc<PostgresClientHolder>, schema: &str) -> Result<Self> {
         validate_identifier(schema, "storage schema")?;
         let qualified_table = format!("{}.\"memories_qdrant_sync\"", quote_identifier(schema));
         let store = Self {
-            db_url: db_url.to_string(),
-            connect_timeout_secs,
-            tls_mode,
+            client,
             qualified_table,
         };
         store.init_schema()?;
@@ -103,7 +94,8 @@ impl SyncStateStore {
                        OR content_hash=$4
                    )"
             );
-            let affected = client.execute(&stmt, &[&key, &now, &expected_op, &expected_content_hash])?;
+            let affected =
+                client.execute(&stmt, &[&key, &now, &expected_op, &expected_content_hash])?;
             if affected == 0 {
                 anyhow::bail!("sync state changed concurrently for key '{key}' in {table}");
             }
@@ -226,69 +218,8 @@ impl SyncStateStore {
         T: Send + 'static,
         F: FnOnce(&mut Client) -> Result<T> + Send + 'static,
     {
-        let db_url = self.db_url.clone();
-        let connect_timeout_secs = self.connect_timeout_secs;
-        let tls_mode = self.tls_mode;
-        let mut client = connect_client(&db_url, connect_timeout_secs, tls_mode)?;
-        task(&mut client)
+        self.client.with_client(task)
     }
-}
-
-fn connect_client(
-    db_url: &str,
-    connect_timeout_secs: Option<u64>,
-    tls_mode: bool,
-) -> Result<Client> {
-    let mut config: postgres::Config = db_url
-        .parse()
-        .context("invalid PostgreSQL connection URL")?;
-    if let Some(timeout_secs) = connect_timeout_secs {
-        config.connect_timeout(Duration::from_secs(
-            timeout_secs.min(POSTGRES_CONNECT_TIMEOUT_CAP_SECS),
-        ));
-    }
-
-    if tls_mode {
-        let tls_insecure_skip_verify = storage_tls_insecure_skip_verify();
-        let tls_config = if tls_insecure_skip_verify {
-            tracing::warn!(
-                "ZEROCLAW_STORAGE_TLS_INSECURE_SKIP_VERIFY is enabled; TLS certificate verification is disabled"
-            );
-            let mut config = rustls::ClientConfig::builder()
-                .with_root_certificates(rustls::RootCertStore::empty())
-                .with_no_client_auth();
-            config
-                .dangerous()
-                .set_certificate_verifier(super::tls::insecure_verifier());
-            config
-        } else {
-            let root_store: rustls::RootCertStore =
-                webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect();
-            rustls::ClientConfig::builder()
-                .with_root_certificates(root_store)
-                .with_no_client_auth()
-        };
-        let tls = tokio_postgres_rustls::MakeRustlsConnect::new(tls_config);
-        config
-            .connect(tls)
-            .context("failed to connect PostgreSQL sync state (TLS)")
-    } else {
-        config
-            .connect(NoTls)
-            .context("failed to connect PostgreSQL sync state")
-    }
-}
-
-fn storage_tls_insecure_skip_verify() -> bool {
-    std::env::var("ZEROCLAW_STORAGE_TLS_INSECURE_SKIP_VERIFY")
-        .ok()
-        .map(|value| {
-            matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            )
-        })
-        .unwrap_or(false)
 }
 
 fn sanitize_error_for_storage(error: &str) -> String {
@@ -306,27 +237,4 @@ fn sanitize_error_for_storage(error: &str) -> String {
         count += 1;
     }
     out.trim().to_string()
-}
-
-fn validate_identifier(value: &str, field_name: &str) -> Result<()> {
-    if value.is_empty() {
-        anyhow::bail!("{field_name} must not be empty");
-    }
-    let mut chars = value.chars();
-    let Some(first) = chars.next() else {
-        anyhow::bail!("{field_name} must not be empty");
-    };
-    if !(first.is_ascii_alphabetic() || first == '_') {
-        anyhow::bail!("{field_name} must start with an ASCII letter or underscore; got '{value}'");
-    }
-    if !chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_') {
-        anyhow::bail!(
-            "{field_name} can only contain ASCII letters, numbers, and underscores; got '{value}'"
-        );
-    }
-    Ok(())
-}
-
-fn quote_identifier(value: &str) -> String {
-    format!("\"{value}\"")
 }
