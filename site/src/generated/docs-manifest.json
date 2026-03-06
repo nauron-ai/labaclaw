@@ -15,7 +15,7 @@
       "root",
       "start"
     ],
-    "readingMinutes": 17,
+    "readingMinutes": 16,
     "startHere": false,
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/AGENTS.md"
   },
@@ -247,8 +247,8 @@
   {
     "id": "docs-audit-event-schema-md",
     "path": "docs/audit-event-schema.md",
-    "title": "CI Audit Event Schema",
-    "summary": "This document defines the normalized audit event envelope used by active release workflows.",
+    "title": "CI/Security Audit Event Schema",
+    "summary": "This document defines the normalized audit event envelope used by CI/CD and security workflows.",
     "section": "audit-event-schema.md",
     "language": "en",
     "journey": "reference",
@@ -325,31 +325,10 @@
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/channels-reference.md"
   },
   {
-    "id": "docs-ci-blacksmith-md",
-    "path": "docs/ci-blacksmith.md",
-    "title": "Blacksmith Production Build Pipeline",
-    "summary": "This document describes the production binary build lane for ZeroClaw on Blacksmith-backed GitHub Actions runners.",
-    "section": "ci-blacksmith.md",
-    "language": "en",
-    "journey": "build",
-    "audience": "builder",
-    "kind": "guide",
-    "tags": [
-      "build",
-      "builder",
-      "ci-blacksmith.md",
-      "guide",
-      "operations"
-    ],
-    "readingMinutes": 1,
-    "startHere": false,
-    "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/ci-blacksmith.md"
-  },
-  {
     "id": "docs-ci-map-md",
     "path": "docs/ci-map.md",
     "title": "CI Workflow Map",
-    "summary": "This repository now uses a minimal CI/CD workflow surface.",
+    "summary": "This document explains what each GitHub workflow does, when it runs, and whether it should block merges.",
     "section": "ci-map.md",
     "language": "en",
     "journey": "operate",
@@ -362,7 +341,7 @@
       "operations",
       "operator"
     ],
-    "readingMinutes": 1,
+    "readingMinutes": 9,
     "startHere": false,
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/ci-map.md"
   },
@@ -381,7 +360,7 @@
       "commands-reference.md",
       "reference"
     ],
-    "readingMinutes": 9,
+    "readingMinutes": 8,
     "startHere": true,
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/commands-reference.md"
   },
@@ -419,7 +398,7 @@
       "config-reference.md",
       "reference"
     ],
-    "readingMinutes": 35,
+    "readingMinutes": 34,
     "startHere": true,
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/config-reference.md"
   },
@@ -730,7 +709,7 @@
       "onboarding",
       "start"
     ],
-    "readingMinutes": 2,
+    "readingMinutes": 1,
     "startHere": true,
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/getting-started/README.md"
   },
@@ -1054,8 +1033,8 @@
   {
     "id": "docs-i18n-el-ci-map-md",
     "path": "docs/i18n/el/ci-map.md",
-    "title": "CI Workflow Map",
-    "summary": "Το αποθετήριο χρησιμοποιεί πλέον ένα ελάχιστο σύνολο CI/CD workflows.",
+    "title": "Οδηγός Αυτόματων Ελέγχων (CI Map)",
+    "summary": "Το παρόν έγγραφο περιγράφει τη δομή και τις λειτουργίες των αυτοματοποιημένων ελέγχων (GitHub Actions) στο ZeroClaw.",
     "section": "i18n/el",
     "language": "el",
     "journey": "localize",
@@ -1069,7 +1048,7 @@
       "localize",
       "operations"
     ],
-    "readingMinutes": 1,
+    "readingMinutes": 2,
     "startHere": false,
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/i18n/el/ci-map.md"
   },
@@ -1111,7 +1090,7 @@
       "localize",
       "reference"
     ],
-    "readingMinutes": 3,
+    "readingMinutes": 2,
     "startHere": false,
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/i18n/el/config-reference.md"
   },
@@ -2203,30 +2182,6 @@
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/i18n/el/zai-glm-setup.md"
   },
   {
-    "id": "docs-i18n-es-readme-md",
-    "path": "docs/i18n/es/README.md",
-    "title": "Inicio Rápido",
-    "summary": "⚡️ Funciona en cualquier hardware con",
-    "section": "i18n/es",
-    "language": "es",
-    "journey": "localize",
-    "audience": "contributor",
-    "kind": "guide",
-    "tags": [
-      "contributor",
-      "guide",
-      "hardware",
-      "i18n",
-      "i18n/es",
-      "localize",
-      "onboarding",
-      "operations"
-    ],
-    "readingMinutes": 3,
-    "startHere": false,
-    "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/i18n/es/README.md"
-  },
-  {
     "id": "docs-i18n-fr-actions-source-policy-md",
     "path": "docs/i18n/fr/actions-source-policy.md",
     "title": "Passerelle de localisation: Actions Source Policy",
@@ -3144,29 +3099,6 @@
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/i18n/fr/zai-glm-setup.md"
   },
   {
-    "id": "docs-i18n-it-readme-md",
-    "path": "docs/i18n/it/README.md",
-    "title": "Avvio Rapido",
-    "summary": "⚡️ Funziona su qualsiasi hardware con",
-    "section": "i18n/it",
-    "language": "it",
-    "journey": "localize",
-    "audience": "contributor",
-    "kind": "guide",
-    "tags": [
-      "contributor",
-      "guide",
-      "hardware",
-      "i18n",
-      "i18n/it",
-      "localize",
-      "onboarding"
-    ],
-    "readingMinutes": 3,
-    "startHere": false,
-    "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/i18n/it/README.md"
-  },
-  {
     "id": "docs-i18n-ja-actions-source-policy-md",
     "path": "docs/i18n/ja/actions-source-policy.md",
     "title": "ローカライズブリッジ: Actions Source Policy",
@@ -4081,30 +4013,6 @@
     "readingMinutes": 1,
     "startHere": false,
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/i18n/ja/zai-glm-setup.md"
-  },
-  {
-    "id": "docs-i18n-pt-readme-md",
-    "path": "docs/i18n/pt/README.md",
-    "title": "Início Rápido",
-    "summary": "⚡️ Funciona em qualquer hardware com",
-    "section": "i18n/pt",
-    "language": "pt",
-    "journey": "localize",
-    "audience": "contributor",
-    "kind": "guide",
-    "tags": [
-      "contributor",
-      "guide",
-      "hardware",
-      "i18n",
-      "i18n/pt",
-      "localize",
-      "onboarding",
-      "operations"
-    ],
-    "readingMinutes": 3,
-    "startHere": false,
-    "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/i18n/pt/README.md"
   },
   {
     "id": "docs-i18n-readme-md",
@@ -5244,7 +5152,7 @@
     "id": "docs-i18n-vi-ci-map-md",
     "path": "docs/i18n/vi/ci-map.md",
     "title": "Bản đồ CI Workflow",
-    "summary": "Repo hiện dùng bộ workflow CI/CD tối giản.",
+    "summary": "Tài liệu này giải thích từng GitHub workflow làm gì, khi nào chạy và liệu nó có nên chặn merge hay không.",
     "section": "i18n/vi",
     "language": "vi",
     "journey": "localize",
@@ -5258,7 +5166,7 @@
       "localize",
       "operations"
     ],
-    "readingMinutes": 1,
+    "readingMinutes": 10,
     "startHere": false,
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/i18n/vi/ci-map.md"
   },
@@ -5300,7 +5208,7 @@
       "localize",
       "reference"
     ],
-    "readingMinutes": 18,
+    "readingMinutes": 17,
     "startHere": false,
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/i18n/vi/config-reference.md"
   },
@@ -7255,7 +7163,7 @@
       "migration",
       "reference"
     ],
-    "readingMinutes": 6,
+    "readingMinutes": 5,
     "startHere": false,
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/migration/openclaw-migration-guide.md"
   },
@@ -7388,6 +7296,26 @@
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/operations-runbook.md"
   },
   {
+    "id": "docs-operations-canary-gate-runbook-md",
+    "path": "docs/operations/canary-gate-runbook.md",
+    "title": "Canary Gate Runbook",
+    "summary": "Workflow: .github/workflows/ci-canary-gate.yml",
+    "section": "operations",
+    "language": "en",
+    "journey": "operate",
+    "audience": "operator",
+    "kind": "runbook",
+    "tags": [
+      "operate",
+      "operations",
+      "operator",
+      "runbook"
+    ],
+    "readingMinutes": 2,
+    "startHere": false,
+    "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/operations/canary-gate-runbook.md"
+  },
+  {
     "id": "docs-operations-connectivity-probes-runbook-md",
     "path": "docs/operations/connectivity-probes-runbook.md",
     "title": "Connectivity Probes Runbook",
@@ -7406,6 +7334,48 @@
     "readingMinutes": 2,
     "startHere": false,
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/operations/connectivity-probes-runbook.md"
+  },
+  {
+    "id": "docs-operations-docs-deploy-policy-md",
+    "path": "docs/operations/docs-deploy-policy.md",
+    "title": "Docs Deploy Policy",
+    "summary": "This document defines the promotion and rollback validation contract for docs deployment.",
+    "section": "operations",
+    "language": "en",
+    "journey": "operate",
+    "audience": "operator",
+    "kind": "runbook",
+    "tags": [
+      "deployment",
+      "operate",
+      "operations",
+      "operator",
+      "runbook"
+    ],
+    "readingMinutes": 1,
+    "startHere": false,
+    "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/operations/docs-deploy-policy.md"
+  },
+  {
+    "id": "docs-operations-docs-deploy-runbook-md",
+    "path": "docs/operations/docs-deploy-runbook.md",
+    "title": "Docs Deploy Runbook",
+    "summary": "Workflow: .github/workflows/docs-deploy.yml",
+    "section": "operations",
+    "language": "en",
+    "journey": "operate",
+    "audience": "operator",
+    "kind": "runbook",
+    "tags": [
+      "deployment",
+      "operate",
+      "operations",
+      "operator",
+      "runbook"
+    ],
+    "readingMinutes": 1,
+    "startHere": false,
+    "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/operations/docs-deploy-runbook.md"
   },
   {
     "id": "docs-operations-feature-matrix-runbook-md",
@@ -7429,25 +7399,45 @@
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/operations/feature-matrix-runbook.md"
   },
   {
-    "id": "docs-operations-incident-2026-03-02-main-red-runner-regression-md",
-    "path": "docs/operations/incident-2026-03-02-main-red-runner-regression.md",
-    "title": "CI Runner Incident Report: main branch red on 2026-03-02",
-    "summary": "This report is for CI runner maintainers to debug runner health regressions first, before restoring self-hosted execution for critical workflows.",
+    "id": "docs-operations-ghcr-tag-policy-md",
+    "path": "docs/operations/ghcr-tag-policy.md",
+    "title": "GHCR Tag Policy",
+    "summary": "This document defines the production container tag contract for .github/workflows/pub-docker-img.yml.",
     "section": "operations",
     "language": "en",
     "journey": "operate",
     "audience": "operator",
     "kind": "runbook",
     "tags": [
+      "deployment",
       "operate",
       "operations",
       "operator",
-      "runbook",
-      "troubleshooting"
+      "runbook"
     ],
-    "readingMinutes": 2,
+    "readingMinutes": 1,
     "startHere": false,
-    "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/operations/incident-2026-03-02-main-red-runner-regression.md"
+    "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/operations/ghcr-tag-policy.md"
+  },
+  {
+    "id": "docs-operations-ghcr-vulnerability-policy-md",
+    "path": "docs/operations/ghcr-vulnerability-policy.md",
+    "title": "GHCR Vulnerability Gate Policy",
+    "summary": "This document defines the vulnerability scanning gate contract for GHCR release publishes.",
+    "section": "operations",
+    "language": "en",
+    "journey": "secure",
+    "audience": "security",
+    "kind": "runbook",
+    "tags": [
+      "operations",
+      "runbook",
+      "secure",
+      "security"
+    ],
+    "readingMinutes": 1,
+    "startHere": false,
+    "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/operations/ghcr-vulnerability-policy.md"
   },
   {
     "id": "docs-operations-nightly-all-features-runbook-md",
@@ -7469,6 +7459,26 @@
     "readingMinutes": 2,
     "startHere": false,
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/operations/nightly-all-features-runbook.md"
+  },
+  {
+    "id": "docs-operations-prerelease-stage-gates-md",
+    "path": "docs/operations/prerelease-stage-gates.md",
+    "title": "Pre-release Stage Gates",
+    "summary": "Workflow: .github/workflows/pub-prerelease.yml",
+    "section": "operations",
+    "language": "en",
+    "journey": "operate",
+    "audience": "operator",
+    "kind": "runbook",
+    "tags": [
+      "operate",
+      "operations",
+      "operator",
+      "runbook"
+    ],
+    "readingMinutes": 2,
+    "startHere": false,
+    "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/operations/prerelease-stage-gates.md"
   },
   {
     "id": "docs-operations-readme-md",
@@ -7496,7 +7506,7 @@
     "id": "docs-operations-required-check-mapping-md",
     "path": "docs/operations/required-check-mapping.md",
     "title": "Required Check Mapping",
-    "summary": "This document maps merge/release-critical checks to the remaining workflow set.",
+    "summary": "This document maps merge-critical workflows to expected check names.",
     "section": "operations",
     "language": "en",
     "journey": "operate",
@@ -7508,7 +7518,7 @@
       "operator",
       "runbook"
     ],
-    "readingMinutes": 1,
+    "readingMinutes": 2,
     "startHere": false,
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/operations/required-check-mapping.md"
   },
@@ -7572,26 +7582,6 @@
     "readingMinutes": 6,
     "startHere": false,
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/plans/2026-02-22-wasm-plugin-runtime.md"
-  },
-  {
-    "id": "docs-plugins-runtime-md",
-    "path": "docs/plugins-runtime.md",
-    "title": "WASM Plugin Runtime (Experimental)",
-    "summary": "This document describes the current experimental plugin runtime for ZeroClaw.",
-    "section": "plugins-runtime.md",
-    "language": "en",
-    "journey": "build",
-    "audience": "builder",
-    "kind": "guide",
-    "tags": [
-      "build",
-      "builder",
-      "guide",
-      "plugins-runtime.md"
-    ],
-    "readingMinutes": 2,
-    "startHere": false,
-    "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/plugins-runtime.md"
   },
   {
     "id": "docs-plugins-md",
@@ -7757,7 +7747,7 @@
       "providers-reference.md",
       "reference"
     ],
-    "readingMinutes": 10,
+    "readingMinutes": 9,
     "startHere": false,
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/providers-reference.md"
   },
@@ -7848,7 +7838,7 @@
     "id": "docs-release-process-md",
     "path": "docs/release-process.md",
     "title": "ZeroClaw Release Process",
-    "summary": "This runbook defines the binary-only release flow for this fork.",
+    "summary": "This runbook defines the maintainers' standard release flow.",
     "section": "release-process.md",
     "language": "en",
     "journey": "operate",
@@ -7861,7 +7851,7 @@
       "policy",
       "release-process.md"
     ],
-    "readingMinutes": 2,
+    "readingMinutes": 4,
     "startHere": false,
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/release-process.md"
   },
@@ -8509,7 +8499,7 @@
       "troubleshooting",
       "troubleshooting.md"
     ],
-    "readingMinutes": 4,
+    "readingMinutes": 1,
     "startHere": true,
     "sourceUrl": "https://github.com/zeroclaw-labs/zeroclaw/blob/main/docs/troubleshooting.md"
   },
@@ -8642,7 +8632,7 @@
     "id": "run-tests-md",
     "path": "RUN_TESTS.md",
     "title": "🧪 Test Execution Guide",
-    "summary": "Toolchain note: CI/release metadata is aligned with Rust 1.88; use the same stable toolchain when reproducing release-facing checks locally.",
+    "summary": "1. Select Telegram channel",
     "section": "root",
     "language": "en",
     "journey": "start",
@@ -8651,7 +8641,6 @@
     "tags": [
       "guide",
       "newcomer",
-      "operations",
       "root",
       "start"
     ],
