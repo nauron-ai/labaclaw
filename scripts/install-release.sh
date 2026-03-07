@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="zeroclaw-labs/zeroclaw"
+REPO="nauron-ai/labaclaw"
 API_URL="https://api.github.com/repos/${REPO}/releases/latest"
 RELEASE_BASE="https://github.com/${REPO}/releases/latest/download"
 
@@ -39,6 +39,11 @@ linux_triple() {
 }
 
 pick_install_dir() {
+  if [ -n "${LABACLAW_INSTALL_DIR:-}" ]; then
+    echo "$LABACLAW_INSTALL_DIR"
+    return 0
+  fi
+
   if [ -n "${ZEROCLAW_INSTALL_DIR:-}" ]; then
     echo "$ZEROCLAW_INSTALL_DIR"
     return 0
@@ -62,13 +67,14 @@ while [ "$#" -gt 0 ]; do
       cat <<'EOF'
 Usage: install-release.sh [--no-onboard]
 
-Installs the latest Linux ZeroClaw binary from official GitHub releases.
+Installs the latest Linux LabaClaw binary from official GitHub releases.
 
 Options:
   --no-onboard   Install only; do not run onboarding
 
 Environment:
-  ZEROCLAW_INSTALL_DIR  Override install directory
+  LABACLAW_INSTALL_DIR  Override install directory
+  ZEROCLAW_INSTALL_DIR  Legacy install directory override
 EOF
       exit 0
       ;;
@@ -91,7 +97,7 @@ need_cmd mktemp
 need_cmd install
 
 TRIPLE="$(linux_triple)"
-ASSET="zeroclaw-${TRIPLE}.tar.gz"
+ASSET="labaclaw-${TRIPLE}.tar.gz"
 DOWNLOAD_URL="${RELEASE_BASE}/${ASSET}"
 
 TMP_DIR="$(mktemp -d)"
@@ -111,24 +117,24 @@ curl -fL "$DOWNLOAD_URL" -o "$TMP_DIR/$ASSET"
 
 echo "==> Extracting release archive"
 tar -xzf "$TMP_DIR/$ASSET" -C "$TMP_DIR"
-if [ ! -f "$TMP_DIR/zeroclaw" ]; then
-  echo "error: release archive does not contain expected 'zeroclaw' binary" >&2
+if [ ! -f "$TMP_DIR/labaclaw" ]; then
+  echo "error: release archive does not contain expected 'labaclaw' binary" >&2
   exit 1
 fi
 
 INSTALL_DIR="$(pick_install_dir)"
-BIN_PATH="${INSTALL_DIR}/zeroclaw"
+BIN_PATH="${INSTALL_DIR}/labaclaw"
 
 if [ "${INSTALL_DIR#/usr/local/}" != "$INSTALL_DIR" ]; then
   run_privileged mkdir -p "$INSTALL_DIR"
-  run_privileged install -m 0755 "$TMP_DIR/zeroclaw" "$BIN_PATH"
+  run_privileged install -m 0755 "$TMP_DIR/labaclaw" "$BIN_PATH"
 else
   mkdir -p "$INSTALL_DIR"
-  install -m 0755 "$TMP_DIR/zeroclaw" "$BIN_PATH"
+  install -m 0755 "$TMP_DIR/labaclaw" "$BIN_PATH"
 fi
 
 echo "==> Installed: $BIN_PATH"
-if ! command -v zeroclaw >/dev/null 2>&1; then
+if ! command -v labaclaw >/dev/null 2>&1; then
   echo "note: '$INSTALL_DIR' may not be in PATH for this shell yet." >&2
   echo "      run: export PATH=\"$INSTALL_DIR:\$PATH\"" >&2
 fi

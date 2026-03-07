@@ -7,7 +7,7 @@ set -euo pipefail
 # - Emit JSON + markdown artifacts for auditability
 
 PROFILE="${PROFILE:-release}"
-BINARY_NAME="${BINARY_NAME:-zeroclaw}"
+BINARY_NAME="${BINARY_NAME:-labaclaw}"
 OUTPUT_DIR="${OUTPUT_DIR:-artifacts}"
 FAIL_ON_DRIFT="${FAIL_ON_DRIFT:-false}"
 ALLOW_BUILD_ID_DRIFT="${ALLOW_BUILD_ID_DRIFT:-true}"

@@ -214,9 +214,9 @@ enum EstopLevelArg {
     ToolFreeze,
 }
 
-/// `ZeroClaw` - Zero overhead. Zero compromise. 100% Rust.
+/// `LabaClaw` - Zero overhead. Zero compromise. 100% Rust.
 #[derive(Parser, Debug)]
-#[command(name = "zeroclaw")]
+#[command(name = "labaclaw")]
 #[command(author = "theonlyhennygod")]
 #[command(version = ZEROCLAW_BUILD_VERSION)]
 #[command(about = "The fastest, smallest AI assistant.", long_about = None)]

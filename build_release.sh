@@ -1,8 +1,8 @@
 #!/bin/bash
-# Build ZeroClaw in release mode
+# Build LabaClaw in release mode
 set -e
-echo "Building ZeroClaw in release mode..."
-cd /Users/argenisdelarosa/Downloads/zeroclaw
+echo "Building LabaClaw in release mode..."
+cd "$(dirname "$0")"
 cargo build --release
 echo "Build completed successfully!"
-echo "Binary location: target/release/zeroclaw"
+echo "Binary location: target/release/labaclaw"

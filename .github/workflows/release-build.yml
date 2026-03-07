@@ -81,22 +81,22 @@ jobs:
 
             - name: Build production binary (canonical)
               shell: bash
-              run: cargo build --release --locked
+              run: cargo build --release --locked --package labaclaw --bin labaclaw
 
             - name: Prepare artifact bundle
               shell: bash
               run: |
                   set -euo pipefail
                   mkdir -p artifacts
-                  cp target/release/zeroclaw artifacts/zeroclaw
-                  sha256sum artifacts/zeroclaw > artifacts/zeroclaw.sha256
+                  cp target/release/labaclaw artifacts/labaclaw
+                  sha256sum artifacts/labaclaw > artifacts/labaclaw.sha256
 
             - name: Upload production artifact
               uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
               with:
-                  name: zeroclaw-linux-amd64
+                  name: labaclaw-linux-amd64
                   path: |
-                      artifacts/zeroclaw
-                      artifacts/zeroclaw.sha256
+                      artifacts/labaclaw
+                      artifacts/labaclaw.sha256
                   if-no-files-found: error
                   retention-days: 21

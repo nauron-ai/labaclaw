@@ -1,7 +1,7 @@
 #!/bin/bash
-# Quick setup script to run ZeroClaw web dashboard
+# Quick setup script to run LabaClaw web dashboard
 
-echo "🦀 ZeroClaw Web Dashboard Setup"
+echo "🦀 LabaClaw Web Dashboard Setup"
 echo "================================"
 
 # Check if web assets are built
@@ -14,21 +14,21 @@ if [ ! -d "web/dist" ]; then
 fi
 
 # Build the project
-echo "🔨 Building ZeroClaw binary with embedded web dashboard..."
+echo "🔨 Building LabaClaw binary with embedded web dashboard..."
 cargo build --release
 
 # Check if build was successful
-if [ -f "target/release/zeroclaw" ]; then
+if [ -f "target/release/labaclaw" ]; then
     echo "✅ Build successful! Web dashboard is embedded in the binary."
     echo ""
-    echo "🚀 Starting ZeroClaw Gateway..."
+    echo "🚀 Starting LabaClaw Gateway..."
     echo "📱 Dashboard URL: http://127.0.0.1:3000/"
     echo "🔧 API Endpoint: http://127.0.0.1:3000/api/"
     echo "⏹️  Press Ctrl+C to stop the gateway"
     echo ""
 
     # Start the gateway
-    ./target/release/zeroclaw gateway --open-dashboard
+    ./target/release/labaclaw gateway --open-dashboard
 else
     echo "❌ Build failed! Please check the error messages above."
     exit 1

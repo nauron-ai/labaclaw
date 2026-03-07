@@ -5639,7 +5639,7 @@ fn collect_configured_channels(
         tracing::warn!(
             "Lark/Feishu channel is configured but this binary was compiled without `channel-lark`; skipping Lark/Feishu startup. \
              binary={executable}. \
-             If you built from source, run the built artifact directly (for example `./target/release/zeroclaw daemon`) \
+             If you built from source, run the built artifact directly (for example `./target/release/labaclaw daemon`) \
              or run `cargo run --features channel-lark -- daemon`."
         );
     }

@@ -1980,8 +1980,8 @@ class CiScriptsBehaviorTest(unittest.TestCase):
     def test_release_manifest_generates_checksums_and_report(self) -> None:
         artifacts = self.tmp / "artifacts"
         artifacts.mkdir(parents=True, exist_ok=True)
-        (artifacts / "zeroclaw-x86_64-unknown-linux-gnu.tar.gz").write_bytes(b"release-asset")
-        (artifacts / "zeroclaw.cdx.json").write_text('{"sbom":"ok"}\n', encoding="utf-8")
+        (artifacts / "labaclaw-x86_64-unknown-linux-gnu.tar.gz").write_bytes(b"release-asset")
+        (artifacts / "labaclaw.cdx.json").write_text('{"sbom":"ok"}\n', encoding="utf-8")
         (artifacts / "LICENSE-APACHE").write_text("license\n", encoding="utf-8")
 
         out_json = self.tmp / "release-manifest.json"
@@ -2008,7 +2008,7 @@ class CiScriptsBehaviorTest(unittest.TestCase):
         report = json.loads(out_json.read_text(encoding="utf-8"))
         self.assertEqual(report["release_tag"], "v0.2.0-rc.1")
         self.assertGreaterEqual(len(report["files"]), 3)
-        self.assertIn("zeroclaw-x86_64-unknown-linux-gnu.tar.gz", checksums.read_text(encoding="utf-8"))
+        self.assertIn("labaclaw-x86_64-unknown-linux-gnu.tar.gz", checksums.read_text(encoding="utf-8"))
 
     def test_release_notes_supply_chain_refs_generates_release_preface(self) -> None:
         artifacts = self.tmp / "artifacts"
@@ -2016,9 +2016,9 @@ class CiScriptsBehaviorTest(unittest.TestCase):
         (artifacts / "release-manifest.json").write_text('{"ok":true}\n', encoding="utf-8")
         (artifacts / "release-manifest.md").write_text("# manifest\n", encoding="utf-8")
         (artifacts / "SHA256SUMS").write_text("abc  file\n", encoding="utf-8")
-        (artifacts / "zeroclaw.cdx.json").write_text('{"sbom":"cdx"}\n', encoding="utf-8")
-        (artifacts / "zeroclaw.spdx.json").write_text('{"sbom":"spdx"}\n', encoding="utf-8")
-        (artifacts / "zeroclaw.sha256sums.intoto.json").write_text('{"_type":"statement"}\n', encoding="utf-8")
+        (artifacts / "labaclaw.cdx.json").write_text('{"sbom":"cdx"}\n', encoding="utf-8")
+        (artifacts / "labaclaw.spdx.json").write_text('{"sbom":"spdx"}\n', encoding="utf-8")
+        (artifacts / "labaclaw.sha256sums.intoto.json").write_text('{"_type":"statement"}\n', encoding="utf-8")
         (artifacts / "audit-event-release-sha256sums-provenance.json").write_text(
             '{"schema_version":"zeroclaw.audit.v1"}\n',
             encoding="utf-8",
@@ -2048,7 +2048,7 @@ class CiScriptsBehaviorTest(unittest.TestCase):
                 "--artifacts-dir",
                 str(artifacts),
                 "--repository",
-                "zeroclaw-labs/zeroclaw",
+                "nauron-ai/labaclaw",
                 "--release-tag",
                 "v1.2.3",
                 "--output-json",
@@ -2063,7 +2063,7 @@ class CiScriptsBehaviorTest(unittest.TestCase):
         self.assertTrue(report["ready"])
         self.assertEqual(report["violations"], [])
         sbom_url = report["references"]["sbom_cyclonedx"]["url"]
-        self.assertIn("/releases/download/v1.2.3/zeroclaw.cdx.json", sbom_url)
+        self.assertIn("/releases/download/v1.2.3/labaclaw.cdx.json", sbom_url)
         body = out_md.read_text(encoding="utf-8")
         self.assertIn("Supply-Chain Evidence", body)
         self.assertIn("Automated Commit Notes", body)
@@ -2074,9 +2074,9 @@ class CiScriptsBehaviorTest(unittest.TestCase):
         (artifacts / "release-manifest.json").write_text('{"ok":true}\n', encoding="utf-8")
         (artifacts / "release-manifest.md").write_text("# manifest\n", encoding="utf-8")
         (artifacts / "SHA256SUMS").write_text("abc  file\n", encoding="utf-8")
-        (artifacts / "zeroclaw.cdx.json").write_text('{"sbom":"cdx"}\n', encoding="utf-8")
-        (artifacts / "zeroclaw.spdx.json").write_text('{"sbom":"spdx"}\n', encoding="utf-8")
-        (artifacts / "zeroclaw.sha256sums.intoto.json").write_text('{"_type":"statement"}\n', encoding="utf-8")
+        (artifacts / "labaclaw.cdx.json").write_text('{"sbom":"cdx"}\n', encoding="utf-8")
+        (artifacts / "labaclaw.spdx.json").write_text('{"sbom":"spdx"}\n', encoding="utf-8")
+        (artifacts / "labaclaw.sha256sums.intoto.json").write_text('{"_type":"statement"}\n', encoding="utf-8")
         (artifacts / "release-trigger-guard.json").write_text('{"ready":true}\n', encoding="utf-8")
         (artifacts / "audit-event-release-trigger-guard.json").write_text(
             '{"schema_version":"zeroclaw.audit.v1"}\n',
@@ -2097,7 +2097,7 @@ class CiScriptsBehaviorTest(unittest.TestCase):
                 "--artifacts-dir",
                 str(artifacts),
                 "--repository",
-                "zeroclaw-labs/zeroclaw",
+                "nauron-ai/labaclaw",
                 "--release-tag",
                 "v1.2.3",
                 "--output-json",
@@ -2335,7 +2335,7 @@ class CiScriptsBehaviorTest(unittest.TestCase):
     def test_release_artifact_guard_detects_missing_archives_in_verify_stage(self) -> None:
         artifacts = self.tmp / "artifacts"
         artifacts.mkdir(parents=True, exist_ok=True)
-        (artifacts / "zeroclaw-x86_64-unknown-linux-gnu.tar.gz").write_bytes(b"linux-gnu")
+        (artifacts / "labaclaw-x86_64-unknown-linux-gnu.tar.gz").write_bytes(b"linux-gnu")
 
         contract = self.tmp / "artifact-contract.json"
         contract.write_text(
@@ -2343,15 +2343,15 @@ class CiScriptsBehaviorTest(unittest.TestCase):
                 {
                     "schema_version": "zeroclaw.release-artifact-contract.v1",
                     "release_archive_patterns": [
-                        "zeroclaw-x86_64-unknown-linux-gnu.tar.gz",
-                        "zeroclaw-x86_64-unknown-linux-musl.tar.gz",
+                        "labaclaw-x86_64-unknown-linux-gnu.tar.gz",
+                        "labaclaw-x86_64-unknown-linux-musl.tar.gz",
                     ],
                     "required_manifest_files": [
                         "release-manifest.json",
                         "release-manifest.md",
                         "SHA256SUMS",
                     ],
-                    "required_sbom_files": ["zeroclaw.cdx.json", "zeroclaw.spdx.json"],
+                    "required_sbom_files": ["labaclaw.cdx.json", "labaclaw.spdx.json"],
                     "required_notice_files": ["LICENSE-APACHE", "LICENSE-MIT", "NOTICE"],
                 },
                 indent=2,
@@ -2392,17 +2392,17 @@ class CiScriptsBehaviorTest(unittest.TestCase):
     def test_release_artifact_guard_passes_for_full_publish_contract(self) -> None:
         artifacts = self.tmp / "artifacts"
         artifacts.mkdir(parents=True, exist_ok=True)
-        (artifacts / "zeroclaw-x86_64-unknown-linux-gnu.tar.gz").write_bytes(b"linux-gnu")
-        (artifacts / "zeroclaw-x86_64-unknown-linux-musl.tar.gz").write_bytes(b"linux-musl")
+        (artifacts / "labaclaw-x86_64-unknown-linux-gnu.tar.gz").write_bytes(b"linux-gnu")
+        (artifacts / "labaclaw-x86_64-unknown-linux-musl.tar.gz").write_bytes(b"linux-musl")
         (artifacts / "release-manifest.json").write_text('{"ok":true}\n', encoding="utf-8")
         (artifacts / "release-manifest.md").write_text("# ok\n", encoding="utf-8")
         (artifacts / "SHA256SUMS").write_text("abc  file\n", encoding="utf-8")
-        (artifacts / "zeroclaw.cdx.json").write_text('{"sbom":"cdx"}\n', encoding="utf-8")
-        (artifacts / "zeroclaw.spdx.json").write_text('{"sbom":"spdx"}\n', encoding="utf-8")
+        (artifacts / "labaclaw.cdx.json").write_text('{"sbom":"cdx"}\n', encoding="utf-8")
+        (artifacts / "labaclaw.spdx.json").write_text('{"sbom":"spdx"}\n', encoding="utf-8")
         (artifacts / "LICENSE-APACHE").write_text("license\n", encoding="utf-8")
         (artifacts / "LICENSE-MIT").write_text("license\n", encoding="utf-8")
         (artifacts / "NOTICE").write_text("notice\n", encoding="utf-8")
-        (artifacts / "zeroclaw-x86_64-unknown-linux-gnu.tar.gz.sig").write_text("sig\n", encoding="utf-8")
+        (artifacts / "labaclaw-x86_64-unknown-linux-gnu.tar.gz.sig").write_text("sig\n", encoding="utf-8")
 
         contract = self.tmp / "artifact-contract.json"
         contract.write_text(
@@ -2410,15 +2410,15 @@ class CiScriptsBehaviorTest(unittest.TestCase):
                 {
                     "schema_version": "zeroclaw.release-artifact-contract.v1",
                     "release_archive_patterns": [
-                        "zeroclaw-x86_64-unknown-linux-gnu.tar.gz",
-                        "zeroclaw-x86_64-unknown-linux-musl.tar.gz",
+                        "labaclaw-x86_64-unknown-linux-gnu.tar.gz",
+                        "labaclaw-x86_64-unknown-linux-musl.tar.gz",
                     ],
                     "required_manifest_files": [
                         "release-manifest.json",
                         "release-manifest.md",
                         "SHA256SUMS",
                     ],
-                    "required_sbom_files": ["zeroclaw.cdx.json", "zeroclaw.spdx.json"],
+                    "required_sbom_files": ["labaclaw.cdx.json", "labaclaw.spdx.json"],
                     "required_notice_files": ["LICENSE-APACHE", "LICENSE-MIT", "NOTICE"],
                 },
                 indent=2,
@@ -2456,16 +2456,16 @@ class CiScriptsBehaviorTest(unittest.TestCase):
     def test_release_artifact_guard_rejects_invalid_contract_schema(self) -> None:
         artifacts = self.tmp / "artifacts"
         artifacts.mkdir(parents=True, exist_ok=True)
-        (artifacts / "zeroclaw-x86_64-unknown-linux-gnu.tar.gz").write_bytes(b"linux-gnu")
+        (artifacts / "labaclaw-x86_64-unknown-linux-gnu.tar.gz").write_bytes(b"linux-gnu")
 
         contract = self.tmp / "artifact-contract.json"
         contract.write_text(
             json.dumps(
                 {
                     "schema_version": "zeroclaw.release-artifact-contract.v0",
-                    "release_archive_patterns": ["zeroclaw-x86_64-unknown-linux-gnu.tar.gz"],
+                    "release_archive_patterns": ["labaclaw-x86_64-unknown-linux-gnu.tar.gz"],
                     "required_manifest_files": ["release-manifest.json"],
-                    "required_sbom_files": ["zeroclaw.cdx.json"],
+                    "required_sbom_files": ["labaclaw.cdx.json"],
                     "required_notice_files": ["NOTICE"],
                 },
                 indent=2,

@@ -22,7 +22,7 @@ def sha256_file(path: Path) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate provenance statement for artifact.")
     parser.add_argument("--artifact", required=True)
-    parser.add_argument("--subject-name", default="zeroclaw")
+    parser.add_argument("--subject-name", default="labaclaw")
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 

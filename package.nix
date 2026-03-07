@@ -12,7 +12,7 @@ let
   };
 in
 rustPlatform.buildRustPackage (finalAttrs: {
-  pname = "zeroclaw";
+  pname = "labaclaw";
   version = "0.1.8";
 
   src =

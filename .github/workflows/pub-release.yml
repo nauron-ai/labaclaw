@@ -207,14 +207,14 @@ jobs:
                     # a broadly compatible GLIBC baseline for user distributions.
                     - os: ubuntu-22.04
                       target: x86_64-unknown-linux-gnu
-                      artifact: zeroclaw
+                      artifact: labaclaw
                       archive_ext: tar.gz
                       cross_compiler: ""
                       linker_env: ""
                       linker: ""
                     - os: ubuntu-22.04
                       target: x86_64-unknown-linux-musl
-                      artifact: zeroclaw
+                      artifact: labaclaw
                       archive_ext: tar.gz
                       cross_compiler: ""
                       linker_env: ""
@@ -222,14 +222,14 @@ jobs:
                       use_cross: true
                     - os: ubuntu-22.04
                       target: aarch64-unknown-linux-gnu
-                      artifact: zeroclaw
+                      artifact: labaclaw
                       archive_ext: tar.gz
                       cross_compiler: gcc-aarch64-linux-gnu
                       linker_env: CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER
                       linker: aarch64-linux-gnu-gcc
                     - os: ubuntu-22.04
                       target: aarch64-unknown-linux-musl
-                      artifact: zeroclaw
+                      artifact: labaclaw
                       archive_ext: tar.gz
                       cross_compiler: ""
                       linker_env: ""
@@ -237,14 +237,14 @@ jobs:
                       use_cross: true
                     - os: ubuntu-22.04
                       target: armv7-unknown-linux-gnueabihf
-                      artifact: zeroclaw
+                      artifact: labaclaw
                       archive_ext: tar.gz
                       cross_compiler: gcc-arm-linux-gnueabihf
                       linker_env: CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER
                       linker: arm-linux-gnueabihf-gcc
                     - os: ubuntu-22.04
                       target: armv7-linux-androideabi
-                      artifact: zeroclaw
+                      artifact: labaclaw
                       archive_ext: tar.gz
                       cross_compiler: ""
                       linker_env: ""
@@ -253,7 +253,7 @@ jobs:
                       android_api: 21
                     - os: ubuntu-22.04
                       target: aarch64-linux-android
-                      artifact: zeroclaw
+                      artifact: labaclaw
                       archive_ext: tar.gz
                       cross_compiler: ""
                       linker_env: ""
@@ -262,7 +262,7 @@ jobs:
                       android_api: 21
                     - os: ubuntu-22.04
                       target: x86_64-unknown-freebsd
-                      artifact: zeroclaw
+                      artifact: labaclaw
                       archive_ext: tar.gz
                       cross_compiler: ""
                       linker_env: ""
@@ -270,21 +270,21 @@ jobs:
                       use_cross: true
                     - os: macos-14
                       target: x86_64-apple-darwin
-                      artifact: zeroclaw
+                      artifact: labaclaw
                       archive_ext: tar.gz
                       cross_compiler: ""
                       linker_env: ""
                       linker: ""
                     - os: macos-14
                       target: aarch64-apple-darwin
-                      artifact: zeroclaw
+                      artifact: labaclaw
                       archive_ext: tar.gz
                       cross_compiler: ""
                       linker_env: ""
                       linker: ""
                     - os: windows-2022
                       target: x86_64-pc-windows-msvc
-                      artifact: zeroclaw.exe
+                      artifact: labaclaw.exe
                       archive_ext: zip
                       cross_compiler: ""
                       linker_env: ""
@@ -428,9 +428,9 @@ jobs:
                   fi
                   if [ "$USE_CROSS" = "true" ]; then
                     echo "Using cross for MUSL target"
-                    cross build --profile release-fast --locked --target ${{ matrix.target }}
+                    cross build --profile release-fast --locked --target ${{ matrix.target }} --package labaclaw --bin labaclaw
                   else
-                    cargo build --profile release-fast --locked --target ${{ matrix.target }}
+                    cargo build --profile release-fast --locked --target ${{ matrix.target }} --package labaclaw --bin labaclaw
                   fi
 
             - name: Check binary size (Unix)
@@ -445,19 +445,19 @@ jobs:
               if: runner.os != 'Windows'
               run: |
                   cd target/${{ matrix.target }}/release-fast
-                  tar czf ../../../zeroclaw-${{ matrix.target }}.${{ matrix.archive_ext }} ${{ matrix.artifact }}
+                  tar czf ../../../labaclaw-${{ matrix.target }}.${{ matrix.archive_ext }} ${{ matrix.artifact }}
 
             - name: Package (Windows)
               if: runner.os == 'Windows'
               run: |
                   cd target/${{ matrix.target }}/release-fast
-                  7z a ../../../zeroclaw-${{ matrix.target }}.${{ matrix.archive_ext }} ${{ matrix.artifact }}
+                  7z a ../../../labaclaw-${{ matrix.target }}.${{ matrix.archive_ext }} ${{ matrix.artifact }}
 
             - name: Upload artifact
               uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
               with:
-                  name: zeroclaw-${{ matrix.target }}
-                  path: zeroclaw-${{ matrix.target }}.${{ matrix.archive_ext }}
+                  name: labaclaw-${{ matrix.target }}
+                  path: labaclaw-${{ matrix.target }}.${{ matrix.archive_ext }}
                   retention-days: 7
 
     verify-artifacts:
@@ -546,11 +546,11 @@ jobs:
 
             - name: Generate SBOM (CycloneDX)
               run: |
-                  syft dir:. --source-name zeroclaw -o cyclonedx-json=artifacts/zeroclaw.cdx.json -o spdx-json=artifacts/zeroclaw.spdx.json
+                  syft dir:. --source-name labaclaw -o cyclonedx-json=artifacts/labaclaw.cdx.json -o spdx-json=artifacts/labaclaw.spdx.json
                   {
                     echo "### SBOM Generated"
-                    echo "- CycloneDX: zeroclaw.cdx.json"
-                    echo "- SPDX: zeroclaw.spdx.json"
+                    echo "- CycloneDX: labaclaw.cdx.json"
+                    echo "- SPDX: labaclaw.spdx.json"
                   } >> "$GITHUB_STEP_SUMMARY"
 
             - name: Attach license and notice files
@@ -581,8 +581,8 @@ jobs:
                   set -euo pipefail
                   python3 scripts/ci/generate_provenance.py \
                     --artifact artifacts/SHA256SUMS \
-                    --subject-name "zeroclaw-${RELEASE_TAG}-sha256sums" \
-                    --output artifacts/zeroclaw.sha256sums.intoto.json
+                    --subject-name "labaclaw-${RELEASE_TAG}-sha256sums" \
+                    --output artifacts/labaclaw.sha256sums.intoto.json
 
             - name: Emit SHA256SUMS provenance audit event
               shell: bash
@@ -590,7 +590,7 @@ jobs:
                   set -euo pipefail
                   python3 scripts/ci/emit_audit_event.py \
                     --event-type release_sha256sums_provenance \
-                    --input-json artifacts/zeroclaw.sha256sums.intoto.json \
+                    --input-json artifacts/labaclaw.sha256sums.intoto.json \
                     --output-json artifacts/audit-event-release-sha256sums-provenance.json \
                     --artifact-name release-sha256sums-provenance \
                     --retention-days 30
@@ -668,46 +668,6 @@ jobs:
               run: |
                   set -euo pipefail
                   cat artifacts/release-notes-supply-chain.md >> "$GITHUB_STEP_SUMMARY"
-
-            - name: Verify GHCR release tag availability
-              shell: bash
-              env:
-                  RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
-              run: |
-                  set -euo pipefail
-                  repo="${GITHUB_REPOSITORY,,}"
-                  manifest_url="https://ghcr.io/v2/${repo}/manifests/${RELEASE_TAG}"
-                  accept_header="application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json"
-                  max_attempts=75
-                  sleep_seconds=20
-
-                  for attempt in $(seq 1 "$max_attempts"); do
-                    token_resp="$(curl -sS "https://ghcr.io/token?scope=repository:${repo}:pull" || true)"
-                    token="$(echo "$token_resp" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
-
-                    if [ -z "$token" ]; then
-                      code="000"
-                    else
-                      code="$(curl -sS -o /tmp/ghcr-release-manifest.json -w "%{http_code}" \
-                        -H "Authorization: Bearer ${token}" \
-                        -H "Accept: ${accept_header}" \
-                        "${manifest_url}" || true)"
-                    fi
-
-                    if [ "$code" = "200" ]; then
-                      echo "GHCR release tag is available: ${repo}:${RELEASE_TAG}"
-                      exit 0
-                  fi
-
-                    if [ "$attempt" -lt "$max_attempts" ]; then
-                      echo "Waiting for GHCR tag ${repo}:${RELEASE_TAG} (attempt ${attempt}/${max_attempts}, HTTP ${code})..."
-                      sleep "$sleep_seconds"
-                    fi
-                  done
-
-                  echo "::error::GHCR tag ${repo}:${RELEASE_TAG} was not available before release publish timeout."
-                  cat /tmp/ghcr-release-manifest.json || true
-                  exit 1
 
             - name: Create GitHub Release
               uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2

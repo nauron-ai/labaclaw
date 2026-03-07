@@ -280,9 +280,9 @@ install_prebuilt_binary() {
     return 1
   fi
 
-  archive_url="https://github.com/zeroclaw-labs/zeroclaw/releases/latest/download/zeroclaw-${target}.tar.gz"
-  temp_dir="$(mktemp -d -t zeroclaw-prebuilt-XXXXXX)"
-  archive_path="$temp_dir/zeroclaw-${target}.tar.gz"
+  archive_url="https://github.com/nauron-ai/labaclaw/releases/latest/download/labaclaw-${target}.tar.gz"
+  temp_dir="$(mktemp -d -t labaclaw-prebuilt-XXXXXX)"
+  archive_path="$temp_dir/labaclaw-${target}.tar.gz"
 
   info "Attempting pre-built binary install for target: $target"
   if ! curl -fsSL "$archive_url" -o "$archive_path"; then
@@ -297,22 +297,22 @@ install_prebuilt_binary() {
     return 1
   fi
 
-  extracted_bin="$temp_dir/zeroclaw"
+  extracted_bin="$temp_dir/labaclaw"
   if [[ ! -x "$extracted_bin" ]]; then
-    extracted_bin="$(find "$temp_dir" -maxdepth 2 -type f -name zeroclaw -perm -u+x | head -n 1 || true)"
+    extracted_bin="$(find "$temp_dir" -maxdepth 2 -type f -name labaclaw -perm -u+x | head -n 1 || true)"
   fi
   if [[ -z "$extracted_bin" || ! -x "$extracted_bin" ]]; then
-    warn "Archive did not contain an executable zeroclaw binary."
+    warn "Archive did not contain an executable labaclaw binary."
     rm -rf "$temp_dir"
     return 1
   fi
 
   install_dir="$HOME/.cargo/bin"
   mkdir -p "$install_dir"
-  install -m 0755 "$extracted_bin" "$install_dir/zeroclaw"
+  install -m 0755 "$extracted_bin" "$install_dir/labaclaw"
   rm -rf "$temp_dir"
 
-  info "Installed pre-built binary to $install_dir/zeroclaw"
+  info "Installed pre-built binary to $install_dir/labaclaw"
   if [[ ":$PATH:" != *":$install_dir:"* ]]; then
     warn "$install_dir is not in PATH for this shell."
     warn "Run: export PATH=\"$install_dir:\$PATH\""
@@ -1303,7 +1303,7 @@ MSG
 SCRIPT_PATH="${BASH_SOURCE[0]:-$0}"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" >/dev/null 2>&1 && pwd || pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd || pwd)"
-REPO_URL="https://github.com/zeroclaw-labs/zeroclaw.git"
+REPO_URL="https://github.com/nauron-ai/labaclaw.git"
 ORIGINAL_ARG_COUNT=$#
 GUIDED_MODE="auto"
 
@@ -1690,8 +1690,8 @@ else
 fi
 
 if [[ "$SKIP_INSTALL" == false ]]; then
-  info "Installing zeroclaw to cargo bin"
-  INSTALL_CMD=(cargo install --path "$WORK_DIR" --force --locked)
+  info "Installing labaclaw to cargo bin"
+  INSTALL_CMD=(cargo install --path "$WORK_DIR" --force --locked --bin labaclaw)
   if [[ -n "$LOCAL_CARGO_FEATURES" ]]; then
     info "Applying local Cargo features for install: $LOCAL_CARGO_FEATURES"
     INSTALL_CMD+=(--features "$LOCAL_CARGO_FEATURES")
@@ -1701,33 +1701,33 @@ else
   info "Skipping install"
 fi
 
-ZEROCLAW_BIN=""
-if have_cmd zeroclaw; then
-  ZEROCLAW_BIN="zeroclaw"
-elif [[ -x "$HOME/.cargo/bin/zeroclaw" ]]; then
-  ZEROCLAW_BIN="$HOME/.cargo/bin/zeroclaw"
-elif [[ -x "$WORK_DIR/target/release/zeroclaw" ]]; then
-  ZEROCLAW_BIN="$WORK_DIR/target/release/zeroclaw"
+LABACLAW_BIN=""
+if have_cmd labaclaw; then
+  LABACLAW_BIN="labaclaw"
+elif [[ -x "$HOME/.cargo/bin/labaclaw" ]]; then
+  LABACLAW_BIN="$HOME/.cargo/bin/labaclaw"
+elif [[ -x "$WORK_DIR/target/release/labaclaw" ]]; then
+  LABACLAW_BIN="$WORK_DIR/target/release/labaclaw"
 fi
 
 if [[ "$RUN_ONBOARD" == true ]]; then
-  if [[ -z "$ZEROCLAW_BIN" ]]; then
-    error "onboarding requested but zeroclaw binary is not available."
-    error "Run without --skip-install, or ensure zeroclaw is in PATH."
+  if [[ -z "$LABACLAW_BIN" ]]; then
+    error "onboarding requested but labaclaw binary is not available."
+    error "Run without --skip-install, or ensure labaclaw is in PATH."
     exit 1
   fi
 
   if [[ "$INTERACTIVE_ONBOARD" == true ]]; then
     info "Running TUI onboarding"
     if [[ -t 0 && -t 1 ]]; then
-      "$ZEROCLAW_BIN" onboard --interactive-ui
+      "$LABACLAW_BIN" onboard --interactive-ui
     elif (: </dev/tty) 2>/dev/null; then
       # `curl ... | bash` leaves stdin as a pipe; hand off terminal control to
       # the onboarding TUI using the controlling tty.
-      "$ZEROCLAW_BIN" onboard --interactive-ui </dev/tty >/dev/tty 2>/dev/tty
+      "$LABACLAW_BIN" onboard --interactive-ui </dev/tty >/dev/tty 2>/dev/tty
     else
       error "TUI onboarding requires an interactive terminal."
-      error "Re-run from a terminal: zeroclaw onboard --interactive-ui"
+      error "Re-run from a terminal: labaclaw onboard --interactive-ui"
       exit 1
     fi
   else
@@ -1748,7 +1748,7 @@ MSG
     else
       info "Running quick onboarding (provider: $PROVIDER)"
     fi
-    ONBOARD_CMD=("$ZEROCLAW_BIN" onboard --api-key "$API_KEY" --provider "$PROVIDER")
+    ONBOARD_CMD=("$LABACLAW_BIN" onboard --api-key "$API_KEY" --provider "$PROVIDER")
     if [[ -n "$MODEL" ]]; then
       ONBOARD_CMD+=(--model "$MODEL")
     fi
@@ -1761,7 +1761,7 @@ cat <<'DONE'
 ✅ Bootstrap complete.
 
 Next steps:
-  zeroclaw status
-  zeroclaw agent -m "Hello, ZeroClaw!"
-  zeroclaw gateway
+  labaclaw status
+  labaclaw agent -m "Hello, LabaClaw!"
+  labaclaw gateway
 DONE

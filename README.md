@@ -92,14 +92,14 @@ curl -fsSL https://zeroclawlabs.ai/install.sh | bash
 ### Option 1: Homebrew (macOS/Linuxbrew)
 
 ```bash
-brew install zeroclaw
+brew install labaclaw
 ```
 
 ### Option 2: Clone + Bootstrap
 
 ```bash
-git clone https://github.com/zeroclaw-labs/zeroclaw.git
-cd zeroclaw
+git clone https://github.com/nauron-ai/labaclaw.git
+cd labaclaw
 ./bootstrap.sh
 ```
 
@@ -108,20 +108,20 @@ cd zeroclaw
 ### Option 3: Cargo Install
 
 ```bash
-cargo install zeroclaw
+cargo install labaclaw
 ```
 
 ### First Run
 
 ```bash
 # Start the gateway (serves the Web Dashboard API/UI)
-zeroclaw gateway
+labaclaw gateway
 
 # Open the dashboard URL shown in startup logs
 # (default: http://127.0.0.1:3000/)
 
 # Or chat directly
-zeroclaw chat "Hello!"
+labaclaw chat "Hello!"
 ```
 
 For detailed setup options, see [docs/one-click-bootstrap.md](docs/one-click-bootstrap.md).
