@@ -30,13 +30,16 @@ fn canonical_provider_for_model_defaults(provider_name: &str) -> String {
         };
     }
 
+    if let Some(canonical) = crate::providers::inception::canonical_name(provider_name) {
+        return canonical.to_string();
+    }
+
     match provider_name {
         "grok" => "xai".to_string(),
         "together" => "together-ai".to_string(),
         "google" | "google-gemini" => "gemini".to_string(),
         "github-copilot" => "copilot".to_string(),
         "openai_codex" | "codex" => "openai-codex".to_string(),
-        "inceptionlabs" => "inception".to_string(),
         "kimi_coding" | "kimi_for_coding" => "kimi-code".to_string(),
         "nvidia-nim" | "build.nvidia.com" => "nvidia".to_string(),
         "aws-bedrock" => "bedrock".to_string(),
@@ -69,7 +72,7 @@ pub fn default_model_fallback_for_provider(provider_name: Option<&str>) -> &'sta
         "anthropic" => "claude-sonnet-4-5-20250929",
         "openai" => "gpt-5.2",
         "openai-codex" => "gpt-5-codex",
-        "inception" => "mercury-2",
+        "inception" => crate::providers::inception::DEFAULT_MODEL_ID,
         "venice" => "zai-org-glm-5",
         "groq" => "llama-3.3-70b-versatile",
         "mistral" => "mistral-large-latest",

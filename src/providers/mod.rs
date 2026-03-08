@@ -220,10 +220,6 @@ pub(crate) fn is_stepfun_alias(name: &str) -> bool {
     matches!(name, "stepfun" | "step" | "step-ai" | "step_ai")
 }
 
-pub(crate) fn is_inception_alias(name: &str) -> bool {
-    matches!(name, "inception" | "inceptionlabs")
-}
-
 #[derive(Clone, Copy, Debug)]
 enum MinimaxOauthRegion {
     Global,
@@ -964,7 +960,7 @@ fn resolve_provider_credential(name: &str, credential_override: Option<&str>) ->
         "openai" => vec!["OPENAI_API_KEY"],
         "ollama" => vec!["OLLAMA_API_KEY"],
         "venice" => vec!["VENICE_API_KEY"],
-        name if is_inception_alias(name) => vec!["INCEPTION_API_KEY"],
+        name if inception::is_alias(name) => vec![inception::API_KEY_ENV_VAR],
         "groq" => vec!["GROQ_API_KEY"],
         "mistral" => vec!["MISTRAL_API_KEY"],
         "deepseek" => vec!["DEEPSEEK_API_KEY"],
@@ -1028,7 +1024,7 @@ fn resolve_provider_credential(name: &str, credential_override: Option<&str>) ->
         return None;
     }
 
-    if is_inception_alias(name) {
+    if inception::is_alias(name) {
         return None;
     }
 
@@ -1260,11 +1256,11 @@ fn create_provider_with_url_and_options(
             key,
             AuthStyle::Bearer,
         ))),
-        name if is_inception_alias(name) => {
+        name if inception::is_alias(name) => {
             let base_url = api_url
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
-                .unwrap_or(inception::INCEPTION_BASE_URL);
+                .unwrap_or(inception::BASE_URL);
             Ok(Box::new(inception::InceptionProvider::with_base_url(
                 base_url,
                 key,
@@ -1962,12 +1958,7 @@ pub fn list_providers() -> Vec<ProviderInfo> {
             aliases: &[],
             local: false,
         },
-        ProviderInfo {
-            name: "inception",
-            display_name: "Inception Labs",
-            aliases: &["inceptionlabs"],
-            local: false,
-        },
+        inception::PROVIDER_INFO,
         ProviderInfo {
             name: "vercel",
             display_name: "Vercel AI Gateway",

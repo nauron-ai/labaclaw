@@ -1,8 +1,4 @@
-//! Native Inception Labs provider.
-//!
-//! Inception exposes an OpenAI-compatible chat completions API, but we keep a
-//! first-class typed provider so the runtime can treat it like any other native
-//! provider surface.
+//! Inception Labs provider.
 
 use crate::providers::compatible::{AuthStyle, CompatibleApiMode, OpenAiCompatibleProvider};
 use crate::providers::traits::{
@@ -13,18 +9,83 @@ use crate::tools::ToolSpec;
 use async_trait::async_trait;
 use futures_util::stream;
 
-pub(crate) const INCEPTION_BASE_URL: &str = "https://api.inceptionlabs.ai/v1";
-pub(crate) const INCEPTION_MODELS_URL: &str = "https://api.inceptionlabs.ai/v1/models";
-pub(crate) const INCEPTION_DEFAULT_MODEL: &str = "mercury-2";
+pub(crate) const CANONICAL_NAME: &str = "inception";
+pub(crate) const DISPLAY_NAME: &str = "Inception Labs";
+pub(crate) const DASHBOARD_INTEGRATION_NAME: &str = "Inception";
+pub(crate) const ALIASES: &[&str] = &["inceptionlabs"];
+pub(crate) const API_KEY_ENV_VAR: &str = "INCEPTION_API_KEY";
+pub(crate) const API_KEY_PORTAL_URL: &str = "https://platform.inceptionlabs.ai/";
+pub(crate) const BASE_URL: &str = "https://api.inceptionlabs.ai/v1";
+pub(crate) const MODELS_URL: &str = "https://api.inceptionlabs.ai/v1/models";
+pub(crate) const PROVIDER_PICKER_LABEL: &str = "Inception Labs — Mercury 2 (ultra-low latency)";
 
-/// Native Inception Labs provider wrapper around the compatible transport.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InceptionModel {
+    Mercury2,
+}
+
+impl InceptionModel {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Mercury2 => "mercury-2",
+        }
+    }
+
+    pub const fn display_name(self) -> &'static str {
+        match self {
+            Self::Mercury2 => "Mercury 2",
+        }
+    }
+
+    pub const fn onboarding_description(self) -> &'static str {
+        match self {
+            Self::Mercury2 => "ultra-low latency",
+        }
+    }
+}
+
+pub(crate) const DEFAULT_MODEL: InceptionModel = InceptionModel::Mercury2;
+pub(crate) const DEFAULT_MODEL_ID: &str = DEFAULT_MODEL.as_str();
+pub(crate) const SUPPORTED_MODELS: &[InceptionModel] = &[DEFAULT_MODEL];
+pub(crate) const DASHBOARD_MODEL_OPTIONS: &[&str] = &[DEFAULT_MODEL_ID];
+pub(crate) const PROVIDER_INFO: super::ProviderInfo = super::ProviderInfo {
+    name: CANONICAL_NAME,
+    display_name: DISPLAY_NAME,
+    aliases: ALIASES,
+    local: false,
+};
+
+pub(crate) fn is_alias(name: &str) -> bool {
+    name == CANONICAL_NAME || ALIASES.iter().any(|alias| *alias == name)
+}
+
+pub(crate) fn canonical_name(name: &str) -> Option<&'static str> {
+    is_alias(name).then_some(CANONICAL_NAME)
+}
+
+pub(crate) fn curated_model_options() -> Vec<(String, String)> {
+    SUPPORTED_MODELS
+        .iter()
+        .map(|model| {
+            (
+                model.as_str().to_string(),
+                format!(
+                    "{} ({})",
+                    model.display_name(),
+                    model.onboarding_description()
+                ),
+            )
+        })
+        .collect()
+}
+
 pub struct InceptionProvider {
     inner: OpenAiCompatibleProvider,
 }
 
 impl InceptionProvider {
     pub fn new(credential: Option<&str>, max_tokens_override: Option<u32>) -> Self {
-        Self::with_base_url(INCEPTION_BASE_URL, credential, max_tokens_override)
+        Self::with_base_url(BASE_URL, credential, max_tokens_override)
     }
 
     pub fn with_base_url(
@@ -34,7 +95,7 @@ impl InceptionProvider {
     ) -> Self {
         Self {
             inner: OpenAiCompatibleProvider::new_custom_with_mode(
-                "Inception Labs",
+                DISPLAY_NAME,
                 base_url,
                 credential,
                 AuthStyle::Bearer,
@@ -146,16 +207,24 @@ mod tests {
 
     #[test]
     fn inception_provider_uses_official_api_endpoints() {
-        assert_eq!(INCEPTION_BASE_URL, "https://api.inceptionlabs.ai/v1");
-        assert_eq!(
-            INCEPTION_MODELS_URL,
-            "https://api.inceptionlabs.ai/v1/models"
-        );
+        assert_eq!(BASE_URL, "https://api.inceptionlabs.ai/v1");
+        assert_eq!(MODELS_URL, "https://api.inceptionlabs.ai/v1/models");
     }
 
     #[test]
     fn inception_provider_defaults_to_mercury_2() {
-        assert_eq!(INCEPTION_DEFAULT_MODEL, "mercury-2");
+        assert_eq!(DEFAULT_MODEL_ID, "mercury-2");
+        assert_eq!(DEFAULT_MODEL.as_str(), DEFAULT_MODEL_ID);
+    }
+
+    #[test]
+    fn inception_provider_exposes_canonical_metadata() {
+        assert_eq!(canonical_name(CANONICAL_NAME), Some(CANONICAL_NAME));
+        assert_eq!(canonical_name("inceptionlabs"), Some(CANONICAL_NAME));
+        assert_eq!(API_KEY_ENV_VAR, "INCEPTION_API_KEY");
+        assert_eq!(PROVIDER_INFO.name, CANONICAL_NAME);
+        assert_eq!(PROVIDER_INFO.display_name, DISPLAY_NAME);
+        assert_eq!(PROVIDER_INFO.aliases, ALIASES);
     }
 
     #[test]

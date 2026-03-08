@@ -29,7 +29,7 @@ use std::time::Duration;
 const PROVIDER_OPTIONS: [&str; 6] = [
     "openrouter",
     "openai",
-    "inception",
+    crate::providers::inception::CANONICAL_NAME,
     "anthropic",
     "gemini",
     "ollama",
@@ -1566,7 +1566,7 @@ fn run_provider_probe(plan: &TuiOnboardPlan) -> CheckStatus {
                 Err(error) => CheckStatus::Failed(error.to_string()),
             }
         }
-        "inception" => {
+        name if crate::providers::inception::canonical_name(name).is_some() => {
             if api_key.is_empty() {
                 return CheckStatus::Skipped(
                     "missing API key (required for Inception probe)".to_string(),
@@ -1577,7 +1577,7 @@ fn run_provider_probe(plan: &TuiOnboardPlan) -> CheckStatus {
                 Err(error) => return CheckStatus::Failed(error.to_string()),
             };
             match client
-                .get("https://api.inceptionlabs.ai/v1/models")
+                .get(crate::providers::inception::MODELS_URL)
                 .header("Authorization", format!("Bearer {api_key}"))
                 .send()
             {

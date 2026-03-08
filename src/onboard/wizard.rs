@@ -967,6 +967,10 @@ fn canonical_provider_name(provider_name: &str) -> &str {
         return "qwen-code";
     }
 
+    if let Some(canonical) = crate::providers::inception::canonical_name(provider_name) {
+        return canonical;
+    }
+
     if let Some(canonical) = canonical_china_provider_name(provider_name) {
         if canonical == "doubao" {
             return "volcengine";
@@ -980,7 +984,6 @@ fn canonical_provider_name(provider_name: &str) -> &str {
         "google" | "google-gemini" => "gemini",
         "github-copilot" => "copilot",
         "openai_codex" | "codex" => "openai-codex",
-        "inceptionlabs" => "inception",
         "kimi_coding" | "kimi_for_coding" => "kimi-code",
         "nvidia-nim" | "build.nvidia.com" => "nvidia",
         "aws-bedrock" => "bedrock",
@@ -1022,7 +1025,7 @@ fn default_model_for_provider(provider: &str) -> String {
         "anthropic" => "claude-sonnet-4-5-20250929".into(),
         "openai" => "gpt-5.2".into(),
         "openai-codex" => "gpt-5-codex".into(),
-        "inception" => crate::providers::inception::INCEPTION_DEFAULT_MODEL.into(),
+        "inception" => crate::providers::inception::DEFAULT_MODEL_ID.into(),
         "venice" => "zai-org-glm-5".into(),
         "groq" => "llama-3.3-70b-versatile".into(),
         "mistral" => "mistral-large-latest".into(),
@@ -1149,10 +1152,7 @@ fn curated_models_for_provider(provider_name: &str) -> Vec<(String, String)> {
             ),
             ("o4-mini".to_string(), "o4-mini (fallback)".to_string()),
         ],
-        "inception" => vec![(
-            crate::providers::inception::INCEPTION_DEFAULT_MODEL.to_string(),
-            "Mercury 2 (recommended, ultra-low latency)".to_string(),
-        )],
+        "inception" => crate::providers::inception::curated_model_options(),
         "venice" => vec![
             (
                 "zai-org-glm-5".to_string(),
@@ -1602,7 +1602,7 @@ fn models_endpoint_for_provider(provider_name: &str) -> Option<&'static str> {
         }
         _ => match canonical_provider_name(provider_name) {
             "openai-codex" | "openai" => Some("https://api.openai.com/v1/models"),
-            "inception" => Some(crate::providers::inception::INCEPTION_MODELS_URL),
+            "inception" => Some(crate::providers::inception::MODELS_URL),
             "venice" => Some("https://api.venice.ai/api/v1/models"),
             "groq" => Some("https://api.groq.com/openai/v1/models"),
             "mistral" => Some("https://api.mistral.ai/v1/models"),
@@ -2569,8 +2569,8 @@ async fn setup_provider(workspace_dir: &Path) -> Result<(String, String, String,
             ("anthropic", "Anthropic — Claude Sonnet & Opus (direct)"),
             ("openai", "OpenAI — GPT-4o, o1, GPT-5 (direct)"),
             (
-                "inception",
-                "Inception Labs — Mercury 2 (ultra-low latency)",
+                crate::providers::inception::CANONICAL_NAME,
+                crate::providers::inception::PROVIDER_PICKER_LABEL,
             ),
             (
                 "openai-codex",
@@ -3042,7 +3042,7 @@ async fn setup_provider(workspace_dir: &Path) -> Result<(String, String, String,
         } else if is_stepfun_alias(provider_name) {
             "https://platform.stepfun.com/interface-key"
         } else if canonical_provider_name(provider_name) == "inception" {
-            "https://platform.inceptionlabs.ai/"
+            crate::providers::inception::API_KEY_PORTAL_URL
         } else {
             match provider_name {
                 "openrouter" => "https://openrouter.ai/keys",
@@ -3334,7 +3334,7 @@ fn provider_env_var(name: &str) -> &'static str {
         "openrouter" => "OPENROUTER_API_KEY",
         "anthropic" => "ANTHROPIC_API_KEY",
         "openai-codex" | "openai" => "OPENAI_API_KEY",
-        "inception" => "INCEPTION_API_KEY",
+        "inception" => crate::providers::inception::API_KEY_ENV_VAR,
         "ollama" => "OLLAMA_API_KEY",
         "llamacpp" => "LLAMACPP_API_KEY",
         "sglang" => "SGLANG_API_KEY",
