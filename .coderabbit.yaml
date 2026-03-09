@@ -25,18 +25,13 @@ reviews:
       - dev
     # Skip reviews for draft PRs or WIP
     drafts: false
-    # Enable base branch analysis
-    base_branch_analysis: true
   
   # Poem feature toggle (must be a boolean, not an object)
   poem: false
   
   # Reviewer suggestions
-  reviewer:
-    # Suggest reviewers based on blame data
-    enabled: true
-    # Automatically assign suggested reviewers
-    auto_assign: false
+  suggested_reviewers: true
+  auto_assign_reviewers: false
 
   # Tools configuration
   tools:
@@ -48,7 +43,6 @@ reviews:
   path_filters:
     - "!**/target/**"
     - "!**/node_modules/**"
-    - "!**/.cargo/**"
 
   # General review instructions
   path_instructions:
