@@ -74,7 +74,7 @@ impl PostgresQdrantHybridMemory {
         }
 
         match self.qdrant.store(key, content, category, session_id).await {
-            Ok(_) => {
+            Ok(()) => {
                 if !self.sync_state.is_pending_upsert_hash(key, &hash).await? {
                     tracing::info!(key = %key, "Skipping synced mark: superseded by newer pending state");
                     return Ok(());

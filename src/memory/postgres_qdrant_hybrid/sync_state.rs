@@ -238,8 +238,7 @@ impl SyncStateStore {
 
 fn sanitize_error_for_storage(error: &str) -> String {
     let mut out = String::with_capacity(error.len().min(LAST_ERROR_MAX_CHARS));
-    let mut count = 0usize;
-    for ch in error.chars() {
+    for (count, ch) in error.chars().enumerate() {
         if count >= LAST_ERROR_MAX_CHARS {
             break;
         }
@@ -248,7 +247,6 @@ fn sanitize_error_for_storage(error: &str) -> String {
         } else {
             out.push(ch);
         }
-        count += 1;
     }
     out.trim().to_string()
 }
