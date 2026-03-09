@@ -10,32 +10,20 @@
 //! - [`ProtocolStore`]: WhatsApp Web protocol alignment
 //! - [`DeviceStore`]: Device persistence operations
 
-#[cfg(feature = "whatsapp-web")]
+use super::identity::store as identity_store;
 use async_trait::async_trait;
-#[cfg(feature = "whatsapp-web")]
 use parking_lot::Mutex;
-#[cfg(feature = "whatsapp-web")]
 use rusqlite::{params, Connection};
-#[cfg(feature = "whatsapp-web")]
 use std::path::Path;
-#[cfg(feature = "whatsapp-web")]
 use std::sync::Arc;
 
-#[cfg(feature = "whatsapp-web")]
 use prost::Message;
-#[cfg(feature = "whatsapp-web")]
 use wa_rs_binary::jid::Jid;
-#[cfg(feature = "whatsapp-web")]
 use wa_rs_core::appstate::hash::HashState;
-#[cfg(feature = "whatsapp-web")]
 use wa_rs_core::appstate::processor::AppStateMutationMAC;
-#[cfg(feature = "whatsapp-web")]
 use wa_rs_core::store::traits::DeviceInfo;
-#[cfg(feature = "whatsapp-web")]
 use wa_rs_core::store::traits::DeviceStore as DeviceStoreTrait;
-#[cfg(feature = "whatsapp-web")]
 use wa_rs_core::store::traits::*;
-#[cfg(feature = "whatsapp-web")]
 use wa_rs_core::store::Device as CoreDevice;
 
 /// Custom wa-rs storage backend using rusqlite
@@ -43,7 +31,6 @@ use wa_rs_core::store::Device as CoreDevice;
 /// This implements all 4 storage traits required by wa-rs.
 /// The backend uses ZeroClaw's existing rusqlite setup, avoiding the
 /// Diesel/libsqlite3-sys conflict from wa-rs-sqlite-storage.
-#[cfg(feature = "whatsapp-web")]
 #[derive(Clone)]
 pub struct RusqliteStore {
     /// Database file path
@@ -69,7 +56,6 @@ macro_rules! to_store_err {
     };
 }
 
-#[cfg(feature = "whatsapp-web")]
 impl RusqliteStore {
     /// Create a new rusqlite-based storage backend
     ///
@@ -257,11 +243,23 @@ impl RusqliteStore {
                 PRIMARY KEY (jid, device_id)
             );",
         ))?;
+        identity_store::init_schema(&conn)?;
         Ok(())
+    }
+
+    pub(crate) fn with_connection<T>(
+        &self,
+        f: impl FnOnce(&Connection) -> anyhow::Result<T>,
+    ) -> anyhow::Result<T> {
+        let conn = self.conn.lock();
+        f(&conn)
+    }
+
+    pub(crate) fn device_id(&self) -> i32 {
+        self.device_id
     }
 }
 
-#[cfg(feature = "whatsapp-web")]
 #[async_trait]
 impl SignalStore for RusqliteStore {
     // --- Identity Operations ---
@@ -498,7 +496,6 @@ impl SignalStore for RusqliteStore {
     }
 }
 
-#[cfg(feature = "whatsapp-web")]
 #[async_trait]
 impl AppSyncStore for RusqliteStore {
     async fn get_sync_key(
@@ -634,7 +631,6 @@ impl AppSyncStore for RusqliteStore {
     }
 }
 
-#[cfg(feature = "whatsapp-web")]
 #[async_trait]
 impl ProtocolStore for RusqliteStore {
     // --- SKDM Tracking ---
@@ -1061,7 +1057,6 @@ impl ProtocolStore for RusqliteStore {
     }
 }
 
-#[cfg(feature = "whatsapp-web")]
 #[async_trait]
 impl DeviceStoreTrait for RusqliteStore {
     async fn save(&self, device: &CoreDevice) -> wa_rs_core::store::error::Result<()> {
@@ -1264,10 +1259,8 @@ impl DeviceStoreTrait for RusqliteStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "whatsapp-web")]
     use wa_rs_core::store::traits::{LidPnMappingEntry, ProtocolStore, TcTokenEntry};
 
-    #[cfg(feature = "whatsapp-web")]
     #[test]
     fn rusqlite_store_creates_database() {
         let tmp = tempfile::NamedTempFile::new().unwrap();
@@ -1275,7 +1268,6 @@ mod tests {
         assert_eq!(store.device_id, 1);
     }
 
-    #[cfg(feature = "whatsapp-web")]
     #[tokio::test]
     async fn lid_mapping_round_trip_preserves_learning_source_and_updated_at() {
         let tmp = tempfile::NamedTempFile::new().unwrap();
@@ -1307,7 +1299,6 @@ mod tests {
         assert_eq!(loaded_by_pn.updated_at, entry.updated_at);
     }
 
-    #[cfg(feature = "whatsapp-web")]
     #[tokio::test]
     async fn delete_expired_tc_tokens_returns_deleted_row_count() {
         let tmp = tempfile::NamedTempFile::new().unwrap();

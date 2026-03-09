@@ -42,10 +42,6 @@ pub mod traits;
 pub mod transcription;
 pub mod wati;
 pub mod whatsapp;
-#[cfg(feature = "whatsapp-web")]
-pub mod whatsapp_storage;
-#[cfg(feature = "whatsapp-web")]
-pub mod whatsapp_web;
 
 pub use acp::AcpChannel;
 pub use bluebubbles::BlueBubblesChannel;
@@ -74,7 +70,7 @@ pub use traits::{Channel, SendMessage};
 pub use wati::WatiChannel;
 pub use whatsapp::WhatsAppChannel;
 #[cfg(feature = "whatsapp-web")]
-pub use whatsapp_web::WhatsAppWebChannel;
+pub use whatsapp::WhatsAppWebChannel;
 
 use crate::agent::loop_::{
     build_shell_policy_instructions, build_tool_instructions_from_specs,
