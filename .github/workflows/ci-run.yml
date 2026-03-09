@@ -346,36 +346,10 @@ jobs:
               if: steps.collect_links.outputs.count == '0'
               run: echo "No added links in changed docs lines. Link check skipped."
 
-    lint-feedback:
-        name: Lint Feedback
-        if: github.event_name == 'pull_request'
-        needs: [changes, lint, docs-quality]
-        runs-on: ubuntu-22.04
-        permissions:
-            contents: read
-            pull-requests: write
-            issues: write
-        steps:
-            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-            - name: Post actionable lint failure summary
-              if: always()
-              uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
-              env:
-                  RUST_CHANGED: ${{ needs.changes.outputs.rust_changed }}
-                  DOCS_CHANGED: ${{ needs.changes.outputs.docs_changed }}
-                  LINT_RESULT: ${{ needs.lint.result }}
-                  LINT_DELTA_RESULT: ${{ needs.lint.result }}
-                  DOCS_RESULT: ${{ needs.docs-quality.result }}
-              with:
-                  script: |
-                      const script = require('./.github/workflows/scripts/lint_feedback.js');
-                      await script({github, context, core});
-
     ci-required:
         name: CI Required Gate
         if: always()
-        needs: [changes, lint, workspace-check, package-check, test, build, docs-only, non-rust, docs-quality, lint-feedback]
+        needs: [changes, lint, workspace-check, package-check, test, build, docs-only, non-rust, docs-quality]
         runs-on: ubuntu-22.04
         steps:
             - name: Enforce required status
