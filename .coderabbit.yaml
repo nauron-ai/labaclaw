@@ -41,7 +41,7 @@ reviews:
   # Tools configuration
   tools:
     # Rust-specific tools
-    cargo:
+    clippy:
       enabled: true
 
   # Path filters - ignore generated files
@@ -49,7 +49,6 @@ reviews:
     - "!**/target/**"
     - "!**/node_modules/**"
     - "!**/.cargo/**"
-    - "!**/Cargo.lock"
 
   # General review instructions
   path_instructions:

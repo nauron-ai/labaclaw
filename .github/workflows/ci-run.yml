@@ -372,6 +372,9 @@ jobs:
                       const script = require('./.github/workflows/scripts/lint_feedback.js');
                       await script({github, context, core});
 
+    # Keep this gate aligned with statuses produced by this workflow. Obsolete
+    # governance checks should not remain in `needs`, because they create stale
+    # required gates that CI can no longer satisfy.
     ci-required:
         name: CI Required Gate
         if: always()

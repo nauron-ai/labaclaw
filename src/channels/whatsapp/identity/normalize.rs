@@ -21,15 +21,35 @@ fn split_address_user(value: &str) -> Option<&str> {
         return None;
     }
 
-    let user = trimmed
+    let after_at = trimmed
         .split_once('@')
         .map(|(user, _)| user)
-        .unwrap_or(trimmed)
+        .unwrap_or(trimmed);
+
+    let user = after_at
         .split_once(':')
         .map(|(user, _)| user)
-        .unwrap_or(trimmed)
+        .unwrap_or(after_at)
         .trim()
         .trim_start_matches('+');
 
     (!user.is_empty()).then_some(user)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{normalize_lid, normalize_phone_number};
+
+    #[test]
+    fn normalize_phone_number_keeps_user_part_after_at_split() {
+        assert_eq!(normalize_phone_number("12345@lid"), Some("+12345".into()));
+    }
+
+    #[test]
+    fn normalize_lid_keeps_user_part_after_at_split() {
+        assert_eq!(
+            normalize_lid("zeroclaw_user@lid"),
+            Some("zeroclaw_user".into())
+        );
+    }
 }

@@ -22,11 +22,11 @@ impl WebEventContext {
             });
 
         tracing::info!(
-            "WhatsApp Web message from {} sender_jid={} chat_jid={}: {}",
+            "WhatsApp Web message from {} sender_jid={} chat_jid={} len={}",
             identity.summary(),
             info.source.sender,
             info.source.chat,
-            text
+            text.len()
         );
 
         if !identity.matches_allowlist(&self.allowed_identities) {

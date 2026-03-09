@@ -157,7 +157,13 @@ impl WhatsAppWebChannel {
                     err
                 );
                 let fallback = wa_rs_proto::whatsapp::Message {
-                    conversation: Some(format!("[Failed to send media: {}]", attachment.target)),
+                    conversation: Some(format!(
+                        "[Failed to send media: {}]",
+                        Path::new(&attachment.target)
+                            .file_name()
+                            .and_then(|name| name.to_str())
+                            .unwrap_or("attachment")
+                    )),
                     ..Default::default()
                 };
                 let _ = client.send_message(target.jid.clone(), fallback).await;

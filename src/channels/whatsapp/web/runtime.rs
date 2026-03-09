@@ -3,7 +3,6 @@ use super::{WebEventContext, WhatsAppWebChannel};
 use anyhow::Result;
 use async_trait::async_trait;
 use std::sync::Arc;
-use tokio::select;
 
 impl WhatsAppWebChannel {
     pub(super) async fn listen_loop(
@@ -80,13 +79,8 @@ impl WhatsAppWebChannel {
         *self.client.lock() = Some(bot.client());
         *self.bot_handle.lock() = Some(bot.run().await?);
 
-        let (_shutdown_tx, mut shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
-        select! {
-            _ = shutdown_rx.recv() => tracing::info!("WhatsApp Web channel shutting down"),
-            _ = tokio::signal::ctrl_c() => {
-                tracing::info!("WhatsApp Web channel received Ctrl+C");
-            }
-        }
+        tokio::signal::ctrl_c().await.ok();
+        tracing::info!("WhatsApp Web channel received Ctrl+C, shutting down");
 
         *self.client.lock() = None;
         *self.identity_store.lock() = None;

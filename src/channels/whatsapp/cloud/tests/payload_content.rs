@@ -44,7 +44,7 @@ fn whatsapp_parse_very_long_message() {
 }
 
 #[test]
-fn whatsapp_parse_whitespace_only_message_skipped() {
+fn whatsapp_parse_whitespace_only_message_preserved() {
     let payload = json!({
         "entry": [{
             "changes": [{
