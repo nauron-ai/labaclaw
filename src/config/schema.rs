@@ -67,6 +67,7 @@ pub fn default_model_fallback_for_provider(provider_name: Option<&str>) -> &'sta
     match canonical_provider.as_str() {
         "anthropic" => "claude-sonnet-4-5-20250929",
         "openai" => "gpt-5.2",
+        "inception" => "mercury-2",
         "openai-codex" => "gpt-5-codex",
         "venice" => "zai-org-glm-5",
         "groq" => "llama-3.3-70b-versatile",
@@ -12826,6 +12827,9 @@ provider_api = "not-a-real-mode"
     async fn resolve_default_model_id_uses_provider_specific_fallback() {
         let openai = resolve_default_model_id(None, Some("openai"));
         assert_eq!(openai, "gpt-5.2");
+
+        let inception = resolve_default_model_id(None, Some("inception"));
+        assert_eq!(inception, "mercury-2");
 
         let stepfun = resolve_default_model_id(None, Some("stepfun"));
         assert_eq!(stepfun, "step-3.5-flash");

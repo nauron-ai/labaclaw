@@ -2,7 +2,7 @@
 
 This document maps provider IDs, aliases, and credential environment variables.
 
-Last verified: **March 1, 2026**.
+Last verified: **March 9, 2026**.
 
 ## How to List Providers
 
@@ -29,6 +29,7 @@ credential is not reused for fallback providers.
 | `openrouter` | — | No | `OPENROUTER_API_KEY` |
 | `anthropic` | — | No | `ANTHROPIC_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` |
 | `openai` | — | No | `OPENAI_API_KEY` |
+| `inception` | — | No | `INCEPTION_API_KEY` |
 | `ollama` | — | Yes | `OLLAMA_API_KEY` (optional) |
 | `gemini` | `google`, `google-gemini` | No | `GEMINI_API_KEY`, `GOOGLE_API_KEY` |
 | `venice` | — | No | `VENICE_API_KEY` |
@@ -99,6 +100,31 @@ default_model = "qwen2.5-coder:7b"
 - Authentication: `VERCEL_API_KEY`
 - Vercel AI Gateway usage does not require a project deployment.
 - If you see `DEPLOYMENT_NOT_FOUND`, verify the provider is targeting the gateway endpoint above instead of `https://api.vercel.ai`.
+
+### Inception Notes
+
+- Provider ID: `inception`
+- Base API URL: `https://api.inceptionlabs.ai/v1`
+- Chat endpoint: `/chat/completions`
+- Model discovery endpoint: `/models`
+- Authentication: `INCEPTION_API_KEY`
+- Default model preset: `mercury-2`
+- This provider is wired directly in runtime; `api_url` override is not required for the canonical Inception API.
+
+Minimal setup example:
+
+```bash
+export INCEPTION_API_KEY="your-inception-api-key"
+zeroclaw onboard --provider inception --api-key "$INCEPTION_API_KEY" --model mercury-2 --force
+```
+
+Quick validation:
+
+```bash
+export INCEPTION_API_KEY="your-inception-api-key"
+zeroclaw models refresh --provider inception
+zeroclaw agent --provider inception --model mercury-2 -m "ping"
+```
 
 ### Gemini Notes
 
