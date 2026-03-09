@@ -83,6 +83,7 @@ const ZAI_GLOBAL_BASE_URL: &str = "https://api.z.ai/api/coding/paas/v4";
 const ZAI_CN_BASE_URL: &str = "https://open.bigmodel.cn/api/coding/paas/v4";
 const SILICONFLOW_BASE_URL: &str = "https://api.siliconflow.cn/v1";
 const STEPFUN_BASE_URL: &str = "https://api.stepfun.com/v1";
+const INCEPTION_BASE_URL: &str = "https://api.inceptionlabs.ai/v1";
 const VERCEL_AI_GATEWAY_BASE_URL: &str = "https://ai-gateway.vercel.sh/v1";
 
 struct PluginProvider {
@@ -957,6 +958,7 @@ fn resolve_provider_credential(name: &str, credential_override: Option<&str>) ->
         "anthropic" => vec!["ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
         "openrouter" => vec!["OPENROUTER_API_KEY"],
         "openai" => vec!["OPENAI_API_KEY"],
+        "inception" => vec!["INCEPTION_API_KEY"],
         "ollama" => vec!["OLLAMA_API_KEY"],
         "venice" => vec!["VENICE_API_KEY"],
         "groq" => vec!["GROQ_API_KEY"],
@@ -1244,6 +1246,12 @@ fn create_provider_with_url_and_options(
         "telnyx" => Ok(Box::new(telnyx::TelnyxProvider::new(key))),
 
         // ── OpenAI-compatible providers ──────────────────────
+        "inception" => Ok(Box::new(OpenAiCompatibleProvider::new(
+            "Inception",
+            INCEPTION_BASE_URL,
+            key,
+            AuthStyle::Bearer,
+        ))),
         "venice" => Ok(Box::new(OpenAiCompatibleProvider::new(
             "Venice",
             "https://api.venice.ai",
@@ -1917,6 +1925,12 @@ pub fn list_providers() -> Vec<ProviderInfo> {
             local: false,
         },
         ProviderInfo {
+            name: "inception",
+            display_name: "Inception",
+            aliases: &[],
+            local: false,
+        },
+        ProviderInfo {
             name: "openai-codex",
             display_name: "OpenAI Codex (OAuth)",
             aliases: &["openai_codex", "codex"],
@@ -2308,6 +2322,15 @@ mod tests {
     }
 
     #[test]
+    fn resolve_provider_credential_uses_inception_env_key() {
+        let _env_lock = env_lock();
+        let _inception_guard = EnvGuard::set("INCEPTION_API_KEY", Some("inception-key"));
+
+        let resolved = resolve_provider_credential("inception", None);
+        assert_eq!(resolved.as_deref(), Some("inception-key"));
+    }
+
+    #[test]
     fn resolve_qwen_oauth_context_prefers_explicit_override() {
         let _env_lock = env_lock();
         let fake_home = format!("/tmp/zeroclaw-qwen-oauth-home-{}", std::process::id());
@@ -2566,6 +2589,11 @@ mod tests {
     #[test]
     fn factory_openai() {
         assert!(create_provider("openai", Some("provider-test-credential")).is_ok());
+    }
+
+    #[test]
+    fn factory_inception() {
+        assert!(create_provider("inception", Some("provider-test-credential")).is_ok());
     }
 
     #[test]
@@ -3294,6 +3322,7 @@ providers = ["demo-plugin-provider"]
             "openrouter",
             "anthropic",
             "openai",
+            "inception",
             "ollama",
             "gemini",
             "venice",

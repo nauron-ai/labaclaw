@@ -1554,6 +1554,7 @@ fn supports_live_model_fetch(provider_name: &str) -> bool {
         "openrouter"
             | "openai-codex"
             | "openai"
+            | "inception"
             | "anthropic"
             | "groq"
             | "mistral"
@@ -1595,6 +1596,7 @@ fn models_endpoint_for_provider(provider_name: &str) -> Option<&'static str> {
         }
         _ => match canonical_provider_name(provider_name) {
             "openai-codex" | "openai" => Some("https://api.openai.com/v1/models"),
+            "inception" => Some("https://api.inceptionlabs.ai/v1/models"),
             "venice" => Some("https://api.venice.ai/api/v1/models"),
             "groq" => Some("https://api.groq.com/openai/v1/models"),
             "mistral" => Some("https://api.mistral.ai/v1/models"),
@@ -1957,6 +1959,22 @@ fn fetch_live_models_for_provider(
     Ok(models)
 }
 
+async fn fetch_live_models_for_provider_async(
+    provider_name: &str,
+    api_key: &str,
+    provider_api_url: Option<&str>,
+) -> Result<Vec<String>> {
+    let provider_name = provider_name.to_string();
+    let api_key = api_key.to_string();
+    let provider_api_url = provider_api_url.map(str::to_string);
+
+    tokio::task::spawn_blocking(move || {
+        fetch_live_models_for_provider(&provider_name, &api_key, provider_api_url.as_deref())
+    })
+    .await
+    .context("model refresh worker panicked")?
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ModelCacheEntry {
     provider: String,
@@ -2175,7 +2193,9 @@ pub async fn run_models_refresh(
 
     let api_key = config.api_key.clone().unwrap_or_default();
 
-    match fetch_live_models_for_provider(&provider_name, &api_key, config.api_url.as_deref()) {
+    match fetch_live_models_for_provider_async(&provider_name, &api_key, config.api_url.as_deref())
+        .await
+    {
         Ok(models) if !models.is_empty() => {
             cache_live_models_for_provider(&config.workspace_dir, &provider_name, &models).await?;
             println!(
@@ -3160,11 +3180,13 @@ async fn setup_provider(workspace_dir: &Path) -> Result<(String, String, String,
                 .interact()?;
 
             if should_fetch_now {
-                match fetch_live_models_for_provider(
+                match fetch_live_models_for_provider_async(
                     provider_name,
                     &api_key,
                     provider_api_url.as_deref(),
-                ) {
+                )
+                .await
+                {
                     Ok(live_model_ids) if !live_model_ids.is_empty() => {
                         cache_live_models_for_provider(
                             workspace_dir,
@@ -3317,6 +3339,7 @@ fn provider_env_var(name: &str) -> &'static str {
         "openrouter" => "OPENROUTER_API_KEY",
         "anthropic" => "ANTHROPIC_API_KEY",
         "openai-codex" | "openai" => "OPENAI_API_KEY",
+        "inception" => "INCEPTION_API_KEY",
         "ollama" => "OLLAMA_API_KEY",
         "llamacpp" => "LLAMACPP_API_KEY",
         "sglang" => "SGLANG_API_KEY",
@@ -8133,6 +8156,7 @@ mod tests {
     #[test]
     fn supports_live_model_fetch_for_supported_and_unsupported_providers() {
         assert!(supports_live_model_fetch("openai"));
+        assert!(supports_live_model_fetch("inception"));
         assert!(supports_live_model_fetch("anthropic"));
         assert!(supports_live_model_fetch("gemini"));
         assert!(supports_live_model_fetch("google"));
@@ -8292,6 +8316,10 @@ mod tests {
         assert_eq!(
             models_endpoint_for_provider("openai-codex"),
             Some("https://api.openai.com/v1/models")
+        );
+        assert_eq!(
+            models_endpoint_for_provider("inception"),
+            Some("https://api.inceptionlabs.ai/v1/models")
         );
         assert_eq!(
             models_endpoint_for_provider("venice"),
@@ -8596,6 +8624,7 @@ mod tests {
         assert_eq!(provider_env_var("anthropic"), "ANTHROPIC_API_KEY");
         assert_eq!(provider_env_var("openai-codex"), "OPENAI_API_KEY");
         assert_eq!(provider_env_var("openai"), "OPENAI_API_KEY");
+        assert_eq!(provider_env_var("inception"), "INCEPTION_API_KEY");
         assert_eq!(provider_env_var("ollama"), "OLLAMA_API_KEY");
         assert_eq!(provider_env_var("llamacpp"), "LLAMACPP_API_KEY");
         assert_eq!(provider_env_var("llama.cpp"), "LLAMACPP_API_KEY");
