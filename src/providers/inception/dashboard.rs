@@ -48,7 +48,7 @@ impl DashboardField {
             input_type: DashboardFieldInputType::Select,
             options: DASHBOARD_MODEL_OPTIONS,
             masked_value: None,
-            current_value: Some(current_value.unwrap_or_default().to_string()),
+            current_value: current_value.map(|value| value.to_string()),
         }
     }
 }
@@ -77,5 +77,13 @@ mod tests {
         assert_eq!(fields[0].input_type, DashboardFieldInputType::Secret);
         assert_eq!(fields[1].input_type, DashboardFieldInputType::Select);
         assert_eq!(fields[1].options, DASHBOARD_MODEL_OPTIONS);
+    }
+
+    #[test]
+    fn dashboard_fields_preserve_unset_default_model() {
+        let fields = dashboard_fields(false, None, "***MASKED***");
+
+        assert_eq!(fields[1].current_value, None);
+        assert!(!fields[1].has_value);
     }
 }

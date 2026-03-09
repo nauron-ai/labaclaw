@@ -417,6 +417,23 @@ mod tests {
     }
 
     #[test]
+    fn test_universal_extractor_inception_provider_specific() {
+        let extractor = UniversalQuotaExtractor::new();
+        let mut headers = HeaderMap::new();
+        headers.insert("X-RateLimit-Remaining", "12".parse().unwrap());
+        headers.insert("X-RateLimit-Limit", "120".parse().unwrap());
+
+        assert!(
+            extractor.extractors.contains_key("inception"),
+            "inception should stay registered explicitly"
+        );
+
+        let quota = extractor.extract("inception", &headers, None).unwrap();
+        assert_eq!(quota.rate_limit_remaining, Some(12));
+        assert_eq!(quota.rate_limit_total, Some(120));
+    }
+
+    #[test]
     fn test_universal_extractor_fallback() {
         let extractor = UniversalQuotaExtractor::new();
         let mut headers = HeaderMap::new();

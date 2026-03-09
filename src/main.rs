@@ -298,7 +298,7 @@ Examples:
         #[arg(short, long)]
         message: Option<String>,
 
-        /// Provider to use (openrouter, anthropic, openai, openai-codex, inception)
+        /// Provider ID to use (see `labaclaw providers` for the full list)
         #[arg(short, long)]
         provider: Option<String>,
 

@@ -1567,6 +1567,11 @@ fn run_provider_probe(plan: &TuiOnboardPlan) -> CheckStatus {
             }
         }
         name if crate::providers::inception::canonical_name(name).is_some() => {
+            let api_key = if api_key.is_empty() {
+                std::env::var(crate::providers::inception::API_KEY_ENV_VAR).unwrap_or_default()
+            } else {
+                api_key.to_string()
+            };
             if api_key.is_empty() {
                 return CheckStatus::Skipped(
                     "missing API key (required for Inception probe)".to_string(),
