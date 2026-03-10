@@ -1,28 +1,22 @@
 # One-Click Bootstrap
 
-This page defines the fastest supported path to install and initialize ZeroClaw.
+This page defines the fastest supported path to install and initialize LabaClaw.
 
 Last verified: **March 4, 2026**.
-
-## Option 0: Homebrew (macOS/Linuxbrew)
-
-```bash
-brew install zeroclaw
-```
 
 ## Option A (Recommended): Clone + local script
 
 ```bash
-git clone https://github.com/zeroclaw-labs/zeroclaw.git
-cd zeroclaw
+git clone https://github.com/nauron-ai/labaclaw.git
+cd labaclaw
 ./bootstrap.sh
 ```
 
 What it does by default:
 
-1. `cargo build --release --locked`
-2. `cargo install --path . --force --locked`
-3. In interactive no-flag sessions, launches TUI onboarding (`zeroclaw onboard --interactive-ui`)
+1. On Linux, interactive no-flag runs enter the guided installer before build/install.
+2. The guided flow can install system dependencies and Rust, choose build vs prebuilt, choose whether to install, and optionally run onboarding.
+3. Outside guided mode, bootstrap uses the standard local build/install flow and can launch interactive onboarding when selected.
 
 ### Resource preflight and pre-built flow
 
@@ -51,7 +45,7 @@ To bypass pre-built flow and force source compilation:
 
 ## Dual-mode bootstrap
 
-Default behavior builds/install ZeroClaw and, for interactive no-flag runs, starts TUI onboarding.
+On Linux, no-flag interactive runs prefer the guided installer. Outside that path, bootstrap uses the standard build/install flow and interactive onboarding when selected.
 It still expects an existing Rust toolchain unless you enable bootstrap flags below.
 
 For fresh machines, enable environment bootstrap explicitly:
@@ -71,26 +65,26 @@ Notes:
 ## Option B: Remote one-liner
 
 ```bash
-curl -fsSL https://zeroclawlabs.ai/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/nauron-ai/labaclaw/main/install.sh | bash
 ```
 
 Equivalent GitHub-hosted installer entrypoint:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zeroclaw-labs/zeroclaw/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/nauron-ai/labaclaw/main/install.sh | bash
 ```
 
 For high-security environments, prefer Option A so you can review the script before execution.
 
-No-arg interactive runs default to full-screen TUI onboarding.
+No-arg interactive runs on Linux default to the guided installer, which can continue into onboarding.
 
 Legacy compatibility:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zeroclaw-labs/zeroclaw/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/nauron-ai/labaclaw/main/scripts/install.sh | bash
 ```
 
-This legacy endpoint prefers forwarding to `scripts/bootstrap.sh` and falls back to legacy source install if unavailable in that revision.
+This legacy endpoint prefers `labaclaw_install.sh`, then `scripts/bootstrap.sh`, and otherwise errors if neither entrypoint exists in that revision.
 
 If you run Option B outside a repository checkout, the bootstrap script automatically clones a temporary workspace, builds, installs, and then cleans it up.
 
@@ -102,19 +96,19 @@ If you run Option B outside a repository checkout, the bootstrap script automati
 ./bootstrap.sh --docker
 ```
 
-This builds a local ZeroClaw image and launches onboarding inside a container while
-persisting config/workspace to `./.zeroclaw-docker`.
+This builds a local LabaClaw image and launches onboarding inside a container while
+persisting config/workspace to `./.labaclaw-docker`.
 
 Container CLI defaults to `docker`. If Docker CLI is unavailable and `podman` exists,
-bootstrap auto-falls back to `podman`. You can also set `ZEROCLAW_CONTAINER_CLI`
-explicitly (for example: `ZEROCLAW_CONTAINER_CLI=podman ./bootstrap.sh --docker`).
+bootstrap auto-falls back to `podman`. You can also set `LABACLAW_CONTAINER_CLI`
+explicitly (for example: `LABACLAW_CONTAINER_CLI=podman ./bootstrap.sh --docker`).
 
 For Podman, bootstrap runs with `--userns keep-id` and `:Z` volume labels so
 workspace/config mounts remain writable inside the container.
 
 If you add `--skip-build`, bootstrap skips local image build. It first tries the local
-Docker tag (`ZEROCLAW_DOCKER_IMAGE`, default: `zeroclaw-bootstrap:local`); if missing,
-it pulls `ghcr.io/zeroclaw-labs/zeroclaw:latest` and tags it locally before running.
+Docker tag (`LABACLAW_DOCKER_IMAGE`, default: `labaclaw-bootstrap:local`); if missing,
+it pulls `ghcr.io/nauron-ai/labaclaw:latest` and tags it locally before running.
 
 ### Quick onboarding (non-interactive)
 
@@ -125,7 +119,7 @@ it pulls `ghcr.io/zeroclaw-labs/zeroclaw:latest` and tags it locally before runn
 Or with environment variables:
 
 ```bash
-ZEROCLAW_API_KEY="sk-..." ZEROCLAW_PROVIDER="openrouter" ./bootstrap.sh --onboard
+LABACLAW_API_KEY="sk-..." LABACLAW_PROVIDER="openrouter" ./bootstrap.sh --onboard
 ```
 
 ### Interactive onboarding
@@ -134,13 +128,13 @@ ZEROCLAW_API_KEY="sk-..." ZEROCLAW_PROVIDER="openrouter" ./bootstrap.sh --onboar
 ./bootstrap.sh --interactive-onboard
 ```
 
-This launches the full-screen TUI onboarding flow (`zeroclaw onboard --interactive-ui`).
+This launches the full-screen TUI onboarding flow (`labaclaw onboard --interactive-ui`).
 
 ## Useful flags
 
 - `--install-system-deps`
 - `--install-rust`
-- `--skip-build` (in `--docker` mode: use local image if present, otherwise pull `ghcr.io/zeroclaw-labs/zeroclaw:latest`)
+- `--skip-build` (in `--docker` mode: use local image if present, otherwise pull `ghcr.io/nauron-ai/labaclaw:latest`)
 - `--skip-install`
 - `--provider <id>`
 

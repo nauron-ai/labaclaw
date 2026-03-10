@@ -1,4 +1,4 @@
-//! Custom wa-rs storage backend using ZeroClaw's rusqlite
+//! Custom wa-rs storage backend using LabaClaw's rusqlite
 //!
 //! This module implements all 4 wa-rs storage traits using rusqlite directly,
 //! avoiding the Diesel/libsqlite3-sys dependency conflict from wa-rs-sqlite-storage.
@@ -29,7 +29,7 @@ use wa_rs_core::store::Device as CoreDevice;
 /// Custom wa-rs storage backend using rusqlite
 ///
 /// This implements all 4 storage traits required by wa-rs.
-/// The backend uses ZeroClaw's existing rusqlite setup, avoiding the
+/// The backend uses LabaClaw's existing rusqlite setup, avoiding the
 /// Diesel/libsqlite3-sys conflict from wa-rs-sqlite-storage.
 #[derive(Clone)]
 pub struct RusqliteStore {

@@ -1,4 +1,4 @@
-//! Task Classifier for ZeroClaw Economic Agents
+//! Task Classifier for LabaClaw Economic Agents
 //!
 //! Classifies work instructions into 44 BLS occupations with wage data
 //! to estimate task value for agent economics.

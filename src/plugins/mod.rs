@@ -1,10 +1,10 @@
-//! Plugin system for ZeroClaw.
+//! Plugin system for LabaClaw.
 //!
 //! Modeled after OpenClaw's plugin architecture, adapted for Rust:
 //!
 //! - **Manifest**: each plugin has a `zeroclaw.plugin.toml` descriptor
-//! - **Discovery**: scans bundled, global (`~/.zeroclaw/extensions/`), and
-//!   workspace (`.zeroclaw/extensions/`) directories
+//! - **Discovery**: scans bundled, global (`~/.labaclaw/extensions/`), and
+//!   workspace (`.labaclaw/extensions/`) directories
 //! - **Registry**: collects loaded plugins, their tools, hooks, and diagnostics
 //! - **PluginApi**: passed to `Plugin::register()` so plugins can register
 //!   tools, hooks, and services without knowing the host internals

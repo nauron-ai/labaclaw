@@ -557,7 +557,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn shell_does_not_leak_api_key() {
         let _g1 = EnvGuard::set("API_KEY", "sk-test-secret-12345");
-        let _g2 = EnvGuard::set("ZEROCLAW_API_KEY", "sk-test-secret-67890");
+        let _g2 = EnvGuard::set("LABACLAW_API_KEY", "sk-test-secret-67890");
 
         let tool = ShellTool::new(test_security_with_env_cmd(), test_runtime());
         let result = tool
@@ -571,7 +571,7 @@ mod tests {
         );
         assert!(
             !result.output.contains("sk-test-secret-67890"),
-            "ZEROCLAW_API_KEY leaked to shell command output"
+            "LABACLAW_API_KEY leaked to shell command output"
         );
     }
 
@@ -611,9 +611,9 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn shell_allows_configured_env_passthrough() {
-        let _guard = EnvGuard::set("ZEROCLAW_TEST_PASSTHROUGH", "db://unit-test");
+        let _guard = EnvGuard::set("LABACLAW_TEST_PASSTHROUGH", "db://unit-test");
         let tool = ShellTool::new(
-            test_security_with_env_passthrough(&["ZEROCLAW_TEST_PASSTHROUGH"]),
+            test_security_with_env_passthrough(&["LABACLAW_TEST_PASSTHROUGH"]),
             test_runtime(),
         );
 
@@ -624,7 +624,7 @@ mod tests {
         assert!(result.success);
         assert!(result
             .output
-            .contains("ZEROCLAW_TEST_PASSTHROUGH=db://unit-test"));
+            .contains("LABACLAW_TEST_PASSTHROUGH=db://unit-test"));
     }
 
     #[test]

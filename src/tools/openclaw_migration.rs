@@ -128,7 +128,7 @@ impl Tool for OpenClawMigrationTool {
     }
 
     fn description(&self) -> &str {
-        "Preview or execute merge-first migration from OpenClaw (memory + config + agents) without overwriting existing ZeroClaw data."
+        "Preview or execute merge-first migration from OpenClaw (memory + config + agents) without overwriting existing LabaClaw data."
     }
 
     fn parameters_schema(&self) -> Value {
@@ -316,6 +316,7 @@ mod tests {
         seed_openclaw_workspace(source.path());
 
         let config = test_config(&target);
+        config.save().await.unwrap();
         let tool =
             OpenClawMigrationTool::new(Arc::new(config), Arc::new(SecurityPolicy::default()));
 
@@ -329,7 +330,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.success);
+        assert!(result.success, "{result:?}");
         assert!(result.output.contains("\"dry_run\": true"));
     }
 }

@@ -1,4 +1,4 @@
-//! WASM plugin tool — executes a `.wasm` binary as a ZeroClaw tool.
+//! WASM plugin tool — executes a `.wasm` binary as a LabaClaw tool.
 //!
 //! # Feature gate
 //! Compiled when `--features wasm-tools` is active on supported targets
@@ -323,7 +323,7 @@ pub struct WasmManifest {
     /// Manifest format version (currently `"1"`).
     #[serde(default = "default_manifest_version")]
     pub version: String,
-    /// Optional homepage / source URL (shown in `zeroclaw skill list`).
+    /// Optional homepage / source URL (shown in `labaclaw skill list`).
     #[serde(default)]
     pub homepage: Option<String>,
 }
@@ -347,13 +347,13 @@ impl WasmManifest {
 ///
 /// Supports two layouts:
 ///
-/// **Installed layout** (from `zeroclaw skill install`):
+/// **Installed layout** (from `labaclaw skill install`):
 /// ```text
 /// skills/<skill-name>/tools/<tool-name>/tool.wasm
 /// skills/<skill-name>/tools/<tool-name>/manifest.json
 /// ```
 ///
-/// **Dev layout** (direct from `zeroclaw skill install ./my-tool`):
+/// **Dev layout** (direct from `labaclaw skill install ./my-tool`):
 /// ```text
 /// skills/<skill-name>/tool.wasm
 /// skills/<skill-name>/manifest.json

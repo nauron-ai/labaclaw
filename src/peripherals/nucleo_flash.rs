@@ -1,4 +1,4 @@
-//! Flash ZeroClaw Nucleo-F401RE firmware via probe-rs.
+//! Flash LabaClaw Nucleo-F401RE firmware via probe-rs.
 //!
 //! Builds the Embassy firmware and flashes via ST-Link (built into Nucleo).
 //! Requires: cargo install probe-rs-tools --locked
@@ -19,7 +19,7 @@ pub fn probe_rs_available() -> bool {
         .unwrap_or(false)
 }
 
-/// Flash ZeroClaw Nucleo firmware. Builds from firmware/zeroclaw-nucleo.
+/// Flash LabaClaw Nucleo firmware. Builds from firmware/zeroclaw-nucleo.
 pub fn flash_nucleo_firmware() -> Result<()> {
     if !probe_rs_available() {
         anyhow::bail!(
@@ -34,12 +34,12 @@ pub fn flash_nucleo_firmware() -> Result<()> {
     let firmware_dir = repo_root.join("firmware").join("zeroclaw-nucleo");
     if !firmware_dir.join("Cargo.toml").exists() {
         anyhow::bail!(
-            "Nucleo firmware not found at {}. Run from zeroclaw repo root.",
+            "Nucleo firmware not found at {}. Run from the LabaClaw repo root.",
             firmware_dir.display()
         );
     }
 
-    println!("Building ZeroClaw Nucleo firmware...");
+    println!("Building LabaClaw Nucleo firmware...");
     let build = Command::new("cargo")
         .args(["build", "--release", "--target", TARGET])
         .current_dir(&firmware_dir)
@@ -76,7 +76,7 @@ pub fn flash_nucleo_firmware() -> Result<()> {
         );
     }
 
-    println!("ZeroClaw Nucleo firmware flashed successfully.");
+    println!("LabaClaw Nucleo firmware flashed successfully.");
     println!("The Nucleo now supports: ping, capabilities, gpio_read, gpio_write.");
     println!("Add to config.toml: board = \"nucleo-f401re\", transport = \"serial\", path = \"/dev/ttyACM0\"");
     Ok(())

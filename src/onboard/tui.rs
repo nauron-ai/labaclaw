@@ -355,7 +355,7 @@ impl TuiState {
                     key: FieldKey::Model,
                     label: "Default model",
                     value: display_value(&self.plan.model, false),
-                    hint: "Used as default for `zeroclaw agent`.",
+                    hint: "Used as default for `labaclaw agent`.",
                     required: true,
                     editable: true,
                 },
@@ -590,7 +590,7 @@ impl TuiState {
                     key: FieldKey::TunnelProvider,
                     label: "Tunnel provider",
                     value: self.plan.tunnel_provider().to_string(),
-                    hint: "none keeps ZeroClaw local-only.",
+                    hint: "none keeps LabaClaw local-only.",
                     required: true,
                     editable: true,
                 }];
@@ -1839,7 +1839,7 @@ pub async fn run_wizard_tui_with_migration(
     }
 
     let _workspace_guard = ScopedEnvVar::set(
-        "ZEROCLAW_WORKSPACE",
+        "LABACLAW_WORKSPACE",
         resolved_workspace_dir.to_string_lossy().as_ref(),
     );
 
@@ -1868,7 +1868,7 @@ pub async fn run_wizard_tui_with_migration(
     config.save().await?;
 
     if plan.autostart_channels && has_launchable_channels(&config.channels_config) {
-        std::env::set_var("ZEROCLAW_AUTOSTART_CHANNELS", "1");
+        std::env::set_var("LABACLAW_AUTOSTART_CHANNELS", "1");
     }
 
     println!();
@@ -1986,7 +1986,7 @@ fn draw_ui(frame: &mut Frame<'_>, state: &TuiState) {
 
     let header = Paragraph::new(Line::from(vec![
         Span::styled(
-            "ZeroClaw Onboarding UI",
+            "LabaClaw Onboarding UI",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),

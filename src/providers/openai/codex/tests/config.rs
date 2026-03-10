@@ -1,5 +1,5 @@
 use super::super::config::{
-    build_responses_url, default_zeroclaw_dir, is_default_responses_url, resolve_codex_config,
+    build_responses_url, default_labaclaw_dir, is_default_responses_url, resolve_codex_config,
     resolve_instructions, resolve_reasoning_effort, resolve_responses_url, resolve_transport_mode,
     CodexEnvConfig,
 };
@@ -14,7 +14,7 @@ use crate::providers::ProviderRuntimeOptions;
 
 #[test]
 fn default_state_dir_is_non_empty() {
-    let path = default_zeroclaw_dir();
+    let path = default_labaclaw_dir();
     assert!(!path.as_os_str().is_empty());
 }
 
@@ -168,7 +168,7 @@ fn resolve_instructions_uses_system_prompt_when_present() {
 #[test]
 fn resolve_reasoning_effort_prefers_config_override() {
     let _env_lock = env_lock();
-    let _reasoning_guard = EnvGuard::set("ZEROCLAW_CODEX_REASONING_EFFORT", Some("low"));
+    let _reasoning_guard = EnvGuard::set("LABACLAW_CODEX_REASONING_EFFORT", Some("low"));
     let env = CodexEnvConfig::load().unwrap();
 
     assert_eq!(
@@ -180,7 +180,7 @@ fn resolve_reasoning_effort_prefers_config_override() {
 #[test]
 fn resolve_reasoning_effort_falls_back_to_env_when_override_invalid() {
     let _env_lock = env_lock();
-    let _reasoning_guard = EnvGuard::set("ZEROCLAW_CODEX_REASONING_EFFORT", Some("medium"));
+    let _reasoning_guard = EnvGuard::set("LABACLAW_CODEX_REASONING_EFFORT", Some("medium"));
     let env = CodexEnvConfig::load().unwrap();
 
     assert_eq!(
@@ -192,7 +192,7 @@ fn resolve_reasoning_effort_falls_back_to_env_when_override_invalid() {
 #[test]
 fn resolve_reasoning_effort_defaults_to_high() {
     let _env_lock = env_lock();
-    let _reasoning_guard = EnvGuard::set("ZEROCLAW_CODEX_REASONING_EFFORT", None);
+    let _reasoning_guard = EnvGuard::set("LABACLAW_CODEX_REASONING_EFFORT", None);
     let env = CodexEnvConfig::load().unwrap();
 
     assert_eq!(resolve_reasoning_effort(None, &env), ReasoningEffort::High);
@@ -203,7 +203,7 @@ fn resolve_codex_config_loads_env_once_for_init() {
     let _env_lock = env_lock();
     let _url_guard = EnvGuard::set(CODEX_RESPONSES_URL_ENV, Some("https://env.example.com/v1"));
     let _transport_guard = EnvGuard::set(CODEX_TRANSPORT_ENV, Some("ws"));
-    let _reasoning_guard = EnvGuard::set("ZEROCLAW_CODEX_REASONING_EFFORT", Some("high"));
+    let _reasoning_guard = EnvGuard::set("LABACLAW_CODEX_REASONING_EFFORT", Some("high"));
 
     let resolved = resolve_codex_config(&ProviderRuntimeOptions::default())
         .expect("codex init config should resolve");

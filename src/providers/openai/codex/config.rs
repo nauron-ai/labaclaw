@@ -6,7 +6,7 @@ use super::{
 use crate::providers::ProviderRuntimeOptions;
 use std::path::PathBuf;
 
-const CODEX_REASONING_EFFORT_ENV: &str = "ZEROCLAW_CODEX_REASONING_EFFORT";
+const CODEX_REASONING_EFFORT_ENV: &str = "LABACLAW_CODEX_REASONING_EFFORT";
 
 fn env_nonempty(var_name: &str) -> Option<String> {
     std::env::var(var_name)
@@ -53,10 +53,10 @@ pub(super) fn resolve_codex_config(
     })
 }
 
-pub(super) fn default_zeroclaw_dir() -> PathBuf {
+pub(super) fn default_labaclaw_dir() -> PathBuf {
     directories::UserDirs::new().map_or_else(
-        || PathBuf::from(".zeroclaw"),
-        |dirs| dirs.home_dir().join(".zeroclaw"),
+        || PathBuf::from(".labaclaw"),
+        |dirs| dirs.home_dir().join(".labaclaw"),
     )
 }
 

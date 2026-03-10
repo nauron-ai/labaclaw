@@ -24,12 +24,12 @@ use payload::{build_responses_input, convert_tool_specs};
 use request::{CodexTransport, ReasoningEffort};
 
 const DEFAULT_CODEX_RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
-const CODEX_RESPONSES_URL_ENV: &str = "ZEROCLAW_CODEX_RESPONSES_URL";
-const CODEX_BASE_URL_ENV: &str = "ZEROCLAW_CODEX_BASE_URL";
-const CODEX_TRANSPORT_ENV: &str = "ZEROCLAW_CODEX_TRANSPORT";
-const CODEX_PROVIDER_TRANSPORT_ENV: &str = "ZEROCLAW_PROVIDER_TRANSPORT";
+const CODEX_RESPONSES_URL_ENV: &str = "LABACLAW_CODEX_RESPONSES_URL";
+const CODEX_BASE_URL_ENV: &str = "LABACLAW_CODEX_BASE_URL";
+const CODEX_TRANSPORT_ENV: &str = "LABACLAW_CODEX_TRANSPORT";
+const CODEX_PROVIDER_TRANSPORT_ENV: &str = "LABACLAW_PROVIDER_TRANSPORT";
 const DEFAULT_CODEX_INSTRUCTIONS: &str =
-    "You are ZeroClaw, a concise and helpful coding assistant.";
+    "You are LabaClaw, a concise and helpful coding assistant.";
 const CODEX_WS_CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 const CODEX_WS_SEND_TIMEOUT: Duration = Duration::from_secs(15);
 const CODEX_WS_READ_TIMEOUT: Duration = Duration::from_secs(60);
@@ -83,9 +83,9 @@ impl OpenAiCodexProvider {
         gateway_api_key: Option<&str>,
     ) -> anyhow::Result<Self> {
         let state_dir = options
-            .zeroclaw_dir
+            .labaclaw_dir
             .clone()
-            .unwrap_or_else(config::default_zeroclaw_dir);
+            .unwrap_or_else(config::default_labaclaw_dir);
         let auth = AuthService::new(&state_dir, options.secrets_encrypt);
         let resolved = config::resolve_codex_config(options)?;
         let custom_endpoint = !config::is_default_responses_url(&resolved.responses_url);

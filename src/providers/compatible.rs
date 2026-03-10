@@ -1259,7 +1259,9 @@ impl OpenAiCompatibleProvider {
     }
 
     fn should_try_responses_websocket(&self) -> bool {
-        if let Ok(raw) = std::env::var("ZEROCLAW_RESPONSES_WEBSOCKET") {
+        let raw = std::env::var("LABACLAW_RESPONSES_WEBSOCKET")
+            .or_else(|_| std::env::var("LABACLAW_RESPONSES_WEBSOCKET"));
+        if let Ok(raw) = raw {
             let normalized = raw.trim().to_ascii_lowercase();
             if matches!(normalized.as_str(), "0" | "false" | "off" | "no") {
                 return false;
@@ -1926,7 +1928,7 @@ impl Provider for OpenAiCompatibleProvider {
     ) -> anyhow::Result<String> {
         let credential = self.credential.as_ref().ok_or_else(|| {
             anyhow::anyhow!(
-                "{} API key not set. Run `zeroclaw onboard` or set the appropriate env var.",
+                "{} API key not set. Run `labaclaw onboard` or set the appropriate env var.",
                 self.name
             )
         })?;
@@ -2062,7 +2064,7 @@ impl Provider for OpenAiCompatibleProvider {
     ) -> anyhow::Result<String> {
         let credential = self.credential.as_ref().ok_or_else(|| {
             anyhow::anyhow!(
-                "{} API key not set. Run `zeroclaw onboard` or set the appropriate env var.",
+                "{} API key not set. Run `labaclaw onboard` or set the appropriate env var.",
                 self.name
             )
         })?;
@@ -2179,7 +2181,7 @@ impl Provider for OpenAiCompatibleProvider {
     ) -> anyhow::Result<ProviderChatResponse> {
         let credential = self.credential.as_ref().ok_or_else(|| {
             anyhow::anyhow!(
-                "{} API key not set. Run `zeroclaw onboard` or set the appropriate env var.",
+                "{} API key not set. Run `labaclaw onboard` or set the appropriate env var.",
                 self.name
             )
         })?;
@@ -2343,7 +2345,7 @@ impl Provider for OpenAiCompatibleProvider {
     ) -> anyhow::Result<ProviderChatResponse> {
         let credential = self.credential.as_ref().ok_or_else(|| {
             anyhow::anyhow!(
-                "{} API key not set. Run `zeroclaw onboard` or set the appropriate env var.",
+                "{} API key not set. Run `labaclaw onboard` or set the appropriate env var.",
                 self.name
             )
         })?;
@@ -2651,7 +2653,7 @@ mod tests {
             messages: vec![
                 Message {
                     role: "system".to_string(),
-                    content: MessageContent::Text("You are ZeroClaw".to_string()),
+                    content: MessageContent::Text("You are LabaClaw".to_string()),
                 },
                 Message {
                     role: "user".to_string(),
@@ -3791,12 +3793,12 @@ mod tests {
             "https://example.com",
             Some("k"),
             AuthStyle::Bearer,
-            "zeroclaw-test/1.0",
+            "labaclaw-test/1.0",
         );
         let caps = <OpenAiCompatibleProvider as Provider>::capabilities(&p);
         assert!(caps.native_tool_calling);
         assert!(!caps.vision);
-        assert_eq!(p.user_agent.as_deref(), Some("zeroclaw-test/1.0"));
+        assert_eq!(p.user_agent.as_deref(), Some("labaclaw-test/1.0"));
     }
 
     #[test]
@@ -3806,13 +3808,13 @@ mod tests {
             "https://example.com",
             Some("k"),
             AuthStyle::Bearer,
-            "zeroclaw-test/vision",
+            "labaclaw-test/vision",
             true,
         );
         let caps = <OpenAiCompatibleProvider as Provider>::capabilities(&p);
         assert!(caps.native_tool_calling);
         assert!(caps.vision);
-        assert_eq!(p.user_agent.as_deref(), Some("zeroclaw-test/vision"));
+        assert_eq!(p.user_agent.as_deref(), Some("labaclaw-test/vision"));
     }
 
     #[test]

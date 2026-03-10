@@ -26,7 +26,7 @@ fn capabilities_includes_vision() {
     let options = ProviderRuntimeOptions {
         provider_api_url: None,
         provider_transport: None,
-        zeroclaw_dir: None,
+        labaclaw_dir: None,
         secrets_encrypt: false,
         auth_profile_override: None,
         reasoning_enabled: None,

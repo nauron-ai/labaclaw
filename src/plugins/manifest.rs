@@ -1,7 +1,7 @@
 //! Plugin manifest — the `zeroclaw.plugin.toml` descriptor.
 //!
 //! Mirrors OpenClaw's `openclaw.plugin.json` but uses TOML to match
-//! ZeroClaw's existing config format.
+//! LabaClaw's existing config format.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

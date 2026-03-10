@@ -59,13 +59,13 @@ async fn wait_for_shutdown_signal() -> Result<ShutdownSignal> {
 }
 
 pub async fn run(config: Config, host: String, port: u16) -> Result<()> {
-    // Pre-flight: check if port is already in use by another zeroclaw daemon
+    // Pre-flight: check if port is already in use by another labaclaw daemon
     if let Err(_e) = check_port_available(&host, port).await {
         // Port is in use - check if it's our daemon
         if is_zeroclaw_daemon_running(&host, port).await {
-            tracing::info!("ZeroClaw daemon already running on {host}:{port}");
-            println!("✓ ZeroClaw daemon already running on http://{host}:{port}");
-            println!("  Use 'zeroclaw restart' to restart, or 'zeroclaw status' to check health.");
+            tracing::info!("LabaClaw daemon already running on {host}:{port}");
+            println!("✓ LabaClaw daemon already running on http://{host}:{port}");
+            println!("  Use 'labaclaw restart' to restart, or 'labaclaw status' to check health.");
             return Ok(());
         }
         // Something else is using the port
@@ -153,7 +153,7 @@ pub async fn run(config: Config, host: String, port: u16) -> Result<()> {
         tracing::info!("Cron disabled; scheduler supervisor not started");
     }
 
-    println!("🧠 ZeroClaw daemon started");
+    println!("🧠 LabaClaw daemon started");
     println!("   Gateway:  http://{host}:{port}");
     println!("   Components: gateway, channels, heartbeat, scheduler");
     println!("   {}", shutdown_hint());
@@ -536,7 +536,7 @@ async fn check_port_available(host: &str, port: u16) -> Result<()> {
     }
 }
 
-/// Check if a running daemon on this port is our zeroclaw daemon
+/// Check if a running daemon on this port is our labaclaw daemon
 async fn is_zeroclaw_daemon_running(host: &str, port: u16) -> bool {
     let url = format!("http://{}:{}/health", host, port);
     match reqwest::Client::builder()
@@ -942,7 +942,7 @@ mod tests {
             phone_number_id: None,
             verify_token: None,
             app_secret: None,
-            session_path: Some("~/.zeroclaw/state/whatsapp-web/session.db".into()),
+            session_path: Some("~/.labaclaw/state/whatsapp-web/session.db".into()),
             pair_phone: None,
             pair_code: None,
             allowed_numbers: vec!["*".into()],
