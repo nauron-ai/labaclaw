@@ -1,7 +1,7 @@
-//! Inter-process communication tools for independent ZeroClaw agents.
+//! Inter-process communication tools for independent LabaClaw agents.
 //!
 //! Provides 5 LLM-callable tools backed by a shared SQLite database, allowing
-//! independent ZeroClaw processes on the same host to discover each other and
+//! independent LabaClaw processes on the same host to discover each other and
 //! exchange messages. See Issue #1518 for design rationale.
 
 use super::traits::{Tool, ToolResult};
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS shared_state (
     updated_at INTEGER NOT NULL
 );";
 
-/// Shared SQLite handle for IPC tools. Each ZeroClaw process holds one instance.
+/// Shared SQLite handle for IPC tools. Each LabaClaw process holds one instance.
 pub(crate) struct IpcDb {
     conn: Arc<Mutex<Connection>>,
     agent_id: String,

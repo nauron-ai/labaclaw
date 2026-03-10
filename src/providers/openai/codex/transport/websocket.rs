@@ -64,7 +64,7 @@ impl OpenAiCodexProvider {
         );
         headers.insert("originator", WsHeaderValue::from_static("pi"));
         headers.insert("accept", WsHeaderValue::from_static("text/event-stream"));
-        headers.insert(USER_AGENT, WsHeaderValue::from_static("zeroclaw"));
+        headers.insert(USER_AGENT, WsHeaderValue::from_static("labaclaw"));
 
         if let Some(account_id) = account_id {
             headers.insert("chatgpt-account-id", WsHeaderValue::from_str(account_id)?);

@@ -218,7 +218,7 @@ pub fn audit_zip_bytes(bytes: &[u8]) -> Result<SkillAuditReport> {
 /// Returns `true` if the zip entry name looks like a native binary or library.
 ///
 /// `.wasm` is intentionally excluded — it is a valid skill payload for the
-/// ZeroClaw WASM tool runtime.
+/// LabaClaw WASM tool runtime.
 fn is_native_binary_zip_entry(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     let blocked: &[&str] = &[

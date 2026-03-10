@@ -168,6 +168,24 @@ static RUNTIME_PROXY_CLIENT_CACHE: OnceLock<RwLock<HashMap<String, reqwest::Clie
     OnceLock::new();
 const DEFAULT_PROVIDER_NAME: &str = "openrouter";
 const DEFAULT_MODEL_NAME: &str = "anthropic/claude-sonnet-4.6";
+const LABACLAW_CONFIG_DIR_NAME: &str = ".labaclaw";
+
+fn env_value_any(var_names: &[&str]) -> Option<String> {
+    var_names.iter().find_map(|name| {
+        std::env::var(name)
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    })
+}
+
+fn config_dir_for_home(home: &Path, dir_name: &str) -> PathBuf {
+    home.join(dir_name)
+}
+
+fn resolve_default_config_dir_from_home(home: &Path) -> PathBuf {
+    config_dir_for_home(home, LABACLAW_CONFIG_DIR_NAME)
+}
 
 // ── Top-level config ──────────────────────────────────────────────
 
@@ -195,9 +213,9 @@ impl ProviderApiMode {
     }
 }
 
-/// Top-level ZeroClaw configuration, loaded from `config.toml`.
+/// Top-level LabaClaw configuration, loaded from `config.toml`.
 ///
-/// Resolution order: `ZEROCLAW_WORKSPACE` env → `active_workspace.toml` marker → `~/.zeroclaw/config.toml`.
+/// Resolution order: `LABACLAW_WORKSPACE` env → `active_workspace.toml` marker → `~/.labaclaw/config.toml`.
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Config {
     /// Workspace directory - computed from home, not serialized
@@ -206,7 +224,7 @@ pub struct Config {
     /// Path to config.toml - computed from home, not serialized
     #[serde(skip)]
     pub config_path: PathBuf,
-    /// API key for the selected provider. Always overridden by `ZEROCLAW_API_KEY` env var.
+    /// API key for the selected provider. Always overridden by `LABACLAW_API_KEY` env var.
     /// `API_KEY` env var is only used as fallback when no config key is set.
     pub api_key: Option<String>,
     /// Base URL override for provider API (e.g. "http://10.0.0.1:11434" for remote Ollama)
@@ -448,7 +466,7 @@ pub struct ProviderConfig {
     ///
     /// Resolution order:
     /// 1) `model_routes[].transport` (route-specific)
-    /// 2) env overrides (`PROVIDER_TRANSPORT`, `ZEROCLAW_PROVIDER_TRANSPORT`, `ZEROCLAW_CODEX_TRANSPORT`)
+    /// 2) env overrides (`PROVIDER_TRANSPORT`, `LABACLAW_PROVIDER_TRANSPORT`, `LABACLAW_CODEX_TRANSPORT`)
     /// 3) `provider.transport`
     /// 4) runtime default (`auto`, WebSocket-first with SSE fallback for OpenAI Codex)
     ///
@@ -764,7 +782,7 @@ pub struct McpConfig {
 // ── Agents IPC ──────────────────────────────────────────────────
 
 fn default_agents_ipc_db_path() -> String {
-    "~/.zeroclaw/agents.db".into()
+    "~/.labaclaw/agents.db".into()
 }
 
 fn default_agents_ipc_staleness_secs() -> u64 {
@@ -773,7 +791,7 @@ fn default_agents_ipc_staleness_secs() -> u64 {
 
 /// Inter-process agent communication configuration (`[agents_ipc]` section).
 ///
-/// When enabled, registers IPC tools that let independent ZeroClaw processes
+/// When enabled, registers IPC tools that let independent LabaClaw processes
 /// on the same host discover each other and exchange messages via a shared
 /// SQLite database. Disabled by default (zero overhead when off).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -1298,7 +1316,7 @@ pub struct WasmConfig {
     /// Default: 1_000_000_000.
     #[serde(default = "default_wasm_fuel_limit")]
     pub fuel_limit: u64,
-    /// URL of the ZeroMarket (or compatible) registry used by `zeroclaw skill install`.
+    /// URL of the ZeroMarket (or compatible) registry used by `labaclaw skill install`.
     /// Default: the public ZeroMarket registry.
     #[serde(default = "default_registry_url")]
     pub registry_url: String,
@@ -2095,7 +2113,7 @@ pub struct HttpRequestConfig {
     /// Request timeout in seconds (default: 30)
     #[serde(default = "default_http_timeout_secs")]
     pub timeout_secs: u64,
-    /// User-Agent string sent with HTTP requests (env: ZEROCLAW_HTTP_REQUEST_USER_AGENT)
+    /// User-Agent string sent with HTTP requests (env: LABACLAW_HTTP_REQUEST_USER_AGENT)
     #[serde(default = "default_user_agent")]
     pub user_agent: String,
     /// Optional named credential profiles for env-backed auth injection.
@@ -2165,7 +2183,7 @@ pub struct WebFetchConfig {
     /// Request timeout in seconds (default: 30)
     #[serde(default = "default_web_fetch_timeout_secs")]
     pub timeout_secs: u64,
-    /// User-Agent string sent with fetch requests (env: ZEROCLAW_WEB_FETCH_USER_AGENT)
+    /// User-Agent string sent with fetch requests (env: LABACLAW_WEB_FETCH_USER_AGENT)
     #[serde(default = "default_user_agent")]
     pub user_agent: String,
 }
@@ -2272,7 +2290,7 @@ pub struct WebSearchConfig {
     /// Request timeout in seconds
     #[serde(default = "default_web_search_timeout_secs")]
     pub timeout_secs: u64,
-    /// User-Agent string sent with search requests (env: ZEROCLAW_WEB_SEARCH_USER_AGENT)
+    /// User-Agent string sent with search requests (env: LABACLAW_WEB_SEARCH_USER_AGENT)
     #[serde(default = "default_user_agent")]
     pub user_agent: String,
 }
@@ -2395,7 +2413,7 @@ impl Default for WebSearchConfig {
 }
 
 fn default_user_agent() -> String {
-    "ZeroClaw/1.0".into()
+    "LabaClaw/1.0".into()
 }
 
 // ── Proxy ───────────────────────────────────────────────────────
@@ -2406,9 +2424,9 @@ fn default_user_agent() -> String {
 pub enum ProxyScope {
     /// Use system environment proxy variables only.
     Environment,
-    /// Apply proxy to all ZeroClaw-managed HTTP traffic (default).
+    /// Apply proxy to all LabaClaw-managed HTTP traffic (default).
     #[default]
-    Zeroclaw,
+    Labaclaw,
     /// Apply proxy only to explicitly listed service selectors.
     Services,
 }
@@ -2447,7 +2465,7 @@ impl Default for ProxyConfig {
             https_proxy: None,
             all_proxy: None,
             no_proxy: Vec::new(),
-            scope: ProxyScope::Zeroclaw,
+            scope: ProxyScope::Labaclaw,
             services: Vec::new(),
         }
     }
@@ -2520,7 +2538,7 @@ impl ProxyConfig {
 
         match self.scope {
             ProxyScope::Environment => false,
-            ProxyScope::Zeroclaw => true,
+            ProxyScope::Labaclaw => true,
             ProxyScope::Services => {
                 let service_key = service_key.trim().to_ascii_lowercase();
                 if service_key.is_empty() {
@@ -2872,7 +2890,7 @@ pub fn build_runtime_proxy_client_with_timeouts(
 fn parse_proxy_scope(raw: &str) -> Option<ProxyScope> {
     match raw.trim().to_ascii_lowercase().as_str() {
         "environment" | "env" => Some(ProxyScope::Environment),
-        "zeroclaw" | "internal" | "core" => Some(ProxyScope::Zeroclaw),
+        "labaclaw" | "internal" | "core" => Some(ProxyScope::Labaclaw),
         "services" | "service" => Some(ProxyScope::Services),
         _ => None,
     }
@@ -2975,7 +2993,7 @@ pub struct QdrantConfig {
     #[serde(default)]
     pub url: Option<String>,
     /// Qdrant collection name for storing memories.
-    /// Falls back to `QDRANT_COLLECTION` env var, or default "zeroclaw_memories".
+    /// Falls back to `QDRANT_COLLECTION` env var, or default "labaclaw_memories".
     #[serde(default = "default_qdrant_collection")]
     pub collection: String,
     /// Optional API key for Qdrant Cloud or secured instances.
@@ -2985,7 +3003,7 @@ pub struct QdrantConfig {
 }
 
 fn default_qdrant_collection() -> String {
-    "zeroclaw_memories".into()
+    "labaclaw_memories".into()
 }
 
 impl Default for QdrantConfig {
@@ -3192,7 +3210,7 @@ pub struct ObservabilityConfig {
     #[serde(default)]
     pub otel_endpoint: Option<String>,
 
-    /// Service name reported to the OTel collector. Defaults to "zeroclaw".
+    /// Service name reported to the OTel collector. Defaults to "labaclaw".
     #[serde(default)]
     pub otel_service_name: Option<String>,
 
@@ -3305,8 +3323,8 @@ pub struct PluginsConfig {
     pub deny: Vec<String>,
 
     /// Extra directories to scan for plugins (in addition to the standard locations).
-    /// Standard locations: `<binary_dir>/extensions/`, `~/.zeroclaw/extensions/`,
-    /// `<workspace>/.zeroclaw/extensions/`.
+    /// Standard locations: `<binary_dir>/extensions/`, `~/.labaclaw/extensions/`,
+    /// `<workspace>/.labaclaw/extensions/`.
     #[serde(default)]
     pub load_paths: Vec<String>,
 
@@ -5244,7 +5262,7 @@ pub struct WhatsAppConfig {
     #[serde(default)]
     pub verify_token: Option<String>,
     /// App secret from Meta Business Suite (for webhook signature verification)
-    /// Can also be set via `ZEROCLAW_WHATSAPP_APP_SECRET` environment variable
+    /// Can also be set via `LABACLAW_WHATSAPP_APP_SECRET` environment variable
     /// Only used in Cloud API mode
     #[serde(default)]
     pub app_secret: Option<String>,
@@ -5420,7 +5438,7 @@ pub struct WatiConfig {
     /// Shared secret for WATI webhook authentication.
     ///
     /// Supports `X-Hub-Signature-256` HMAC verification and Bearer-token fallback.
-    /// Can also be set via `ZEROCLAW_WATI_WEBHOOK_SECRET`.
+    /// Can also be set via `LABACLAW_WATI_WEBHOOK_SECRET`.
     /// Default: `None` (unset).
     /// Compatibility/migration: additive key for existing deployments; set this
     /// before enabling inbound WATI webhooks. Remove (or set null) to roll back.
@@ -5468,7 +5486,7 @@ pub struct NextcloudTalkConfig {
     pub app_token: String,
     /// Shared secret for webhook signature verification.
     ///
-    /// Can also be set via `ZEROCLAW_NEXTCLOUD_TALK_WEBHOOK_SECRET`.
+    /// Can also be set via `LABACLAW_NEXTCLOUD_TALK_WEBHOOK_SECRET`.
     #[serde(default)]
     pub webhook_secret: Option<String>,
     /// Allowed Nextcloud actor IDs (`[]` = deny all, `"*"` = allow all).
@@ -5558,7 +5576,7 @@ fn default_irc_port() -> u16 {
     6697
 }
 
-/// How ZeroClaw receives events from Feishu / Lark.
+/// How LabaClaw receives events from Feishu / Lark.
 ///
 /// - `websocket` (default) — persistent WSS long-connection; no public URL required.
 /// - `webhook`             — HTTP callback server; requires a public HTTPS endpoint.
@@ -6123,7 +6141,7 @@ pub struct EstopConfig {
 }
 
 fn default_estop_state_file() -> String {
-    "~/.zeroclaw/estop-state.json".to_string()
+    "~/.labaclaw/estop-state.json".to_string()
 }
 
 impl Default for EstopConfig {
@@ -6167,7 +6185,7 @@ pub struct SyscallAnomalyConfig {
     #[serde(default = "default_syscall_anomaly_alert_cooldown_secs")]
     pub alert_cooldown_secs: u64,
 
-    /// Path to syscall anomaly log file (relative to ~/.zeroclaw unless absolute).
+    /// Path to syscall anomaly log file (relative to ~/.labaclaw unless absolute).
     #[serde(default = "default_syscall_anomaly_log_path")]
     pub log_path: String,
 
@@ -6373,7 +6391,7 @@ pub struct AuditConfig {
     #[serde(default = "default_audit_enabled")]
     pub enabled: bool,
 
-    /// Path to audit log file (relative to zeroclaw dir)
+    /// Path to audit log file (relative to labaclaw dir)
     #[serde(default = "default_audit_log_path")]
     pub log_path: String,
 
@@ -6537,11 +6555,11 @@ impl Default for Config {
     fn default() -> Self {
         let home =
             UserDirs::new().map_or_else(|| PathBuf::from("."), |u| u.home_dir().to_path_buf());
-        let zeroclaw_dir = home.join(".zeroclaw");
+        let labaclaw_dir = resolve_default_config_dir_from_home(&home);
 
         Self {
-            workspace_dir: zeroclaw_dir.join("workspace"),
-            config_path: zeroclaw_dir.join("config.toml"),
+            workspace_dir: labaclaw_dir.join("workspace"),
+            config_path: labaclaw_dir.join("config.toml"),
             api_key: None,
             api_url: None,
             default_provider: Some(DEFAULT_PROVIDER_NAME.to_string()),
@@ -6612,7 +6630,7 @@ fn default_config_dir() -> Result<PathBuf> {
     let home = UserDirs::new()
         .map(|u| u.home_dir().to_path_buf())
         .context("Could not find home directory")?;
-    Ok(home.join(".zeroclaw"))
+    Ok(resolve_default_config_dir_from_home(&home))
 }
 
 fn active_workspace_state_path(marker_root: &Path) -> PathBuf {
@@ -6838,19 +6856,19 @@ pub(crate) fn resolve_config_dir_for_workspace(workspace_dir: &Path) -> (PathBuf
         );
     }
 
-    let legacy_config_dir = workspace_dir
-        .parent()
-        .map(|parent| parent.join(".zeroclaw"));
-    if let Some(legacy_dir) = legacy_config_dir {
-        if legacy_dir.join("config.toml").exists() {
-            return (legacy_dir, workspace_config_dir);
-        }
+    if let Some(parent) = workspace_dir.parent() {
+        for dir_name in [LABACLAW_CONFIG_DIR_NAME] {
+            let config_dir = parent.join(dir_name);
+            if config_dir.join("config.toml").exists() {
+                return (config_dir, workspace_config_dir);
+            }
 
-        if workspace_dir
-            .file_name()
-            .is_some_and(|name| name == std::ffi::OsStr::new("workspace"))
-        {
-            return (legacy_dir, workspace_config_dir);
+            if workspace_dir
+                .file_name()
+                .is_some_and(|name| name == std::ffi::OsStr::new("workspace"))
+            {
+                return (config_dir, workspace_config_dir);
+            }
         }
     }
 
@@ -6863,11 +6881,11 @@ pub(crate) fn resolve_config_dir_for_workspace(workspace_dir: &Path) -> (PathBuf
 /// Resolve the current runtime config/workspace directories for onboarding flows.
 ///
 /// This mirrors the same precedence used by `Config::load_or_init()`:
-/// `ZEROCLAW_CONFIG_DIR` > `ZEROCLAW_WORKSPACE` > active workspace marker > defaults.
+/// `LABACLAW_CONFIG_DIR` > `LABACLAW_WORKSPACE` > active workspace marker > defaults.
 pub(crate) async fn resolve_runtime_dirs_for_onboarding() -> Result<(PathBuf, PathBuf)> {
-    let (default_zeroclaw_dir, default_workspace_dir) = default_config_and_workspace_dirs()?;
+    let (default_labaclaw_dir, default_workspace_dir) = default_config_and_workspace_dirs()?;
     let (config_dir, workspace_dir, _) =
-        resolve_runtime_config_dirs(&default_zeroclaw_dir, &default_workspace_dir).await?;
+        resolve_runtime_config_dirs(&default_labaclaw_dir, &default_workspace_dir).await?;
     Ok((config_dir, workspace_dir))
 }
 
@@ -6882,8 +6900,8 @@ enum ConfigResolutionSource {
 impl ConfigResolutionSource {
     const fn as_str(self) -> &'static str {
         match self {
-            Self::EnvConfigDir => "ZEROCLAW_CONFIG_DIR",
-            Self::EnvWorkspace => "ZEROCLAW_WORKSPACE",
+            Self::EnvConfigDir => "LABACLAW_CONFIG_DIR",
+            Self::EnvWorkspace => "LABACLAW_WORKSPACE",
             Self::ActiveWorkspaceMarker => "active_workspace.toml",
             Self::DefaultConfigDir => "default",
         }
@@ -6891,45 +6909,40 @@ impl ConfigResolutionSource {
 }
 
 async fn resolve_runtime_config_dirs(
-    default_zeroclaw_dir: &Path,
+    default_labaclaw_dir: &Path,
     default_workspace_dir: &Path,
 ) -> Result<(PathBuf, PathBuf, ConfigResolutionSource)> {
-    if let Ok(custom_config_dir) = std::env::var("ZEROCLAW_CONFIG_DIR") {
-        let custom_config_dir = custom_config_dir.trim();
-        if !custom_config_dir.is_empty() {
-            let zeroclaw_dir = PathBuf::from(custom_config_dir);
-            return Ok((
-                zeroclaw_dir.clone(),
-                zeroclaw_dir.join("workspace"),
-                ConfigResolutionSource::EnvConfigDir,
-            ));
-        }
+    if let Some(custom_config_dir) = env_value_any(&["LABACLAW_CONFIG_DIR"]) {
+        let labaclaw_dir = PathBuf::from(custom_config_dir);
+        return Ok((
+            labaclaw_dir.clone(),
+            labaclaw_dir.join("workspace"),
+            ConfigResolutionSource::EnvConfigDir,
+        ));
     }
 
-    if let Ok(custom_workspace) = std::env::var("ZEROCLAW_WORKSPACE") {
-        if !custom_workspace.is_empty() {
-            let (zeroclaw_dir, workspace_dir) =
-                resolve_config_dir_for_workspace(&PathBuf::from(custom_workspace));
-            return Ok((
-                zeroclaw_dir,
-                workspace_dir,
-                ConfigResolutionSource::EnvWorkspace,
-            ));
-        }
+    if let Some(custom_workspace) = env_value_any(&["LABACLAW_WORKSPACE"]) {
+        let (labaclaw_dir, workspace_dir) =
+            resolve_config_dir_for_workspace(&PathBuf::from(custom_workspace));
+        return Ok((
+            labaclaw_dir,
+            workspace_dir,
+            ConfigResolutionSource::EnvWorkspace,
+        ));
     }
 
-    if let Some((zeroclaw_dir, workspace_dir)) =
-        load_persisted_workspace_dirs(default_zeroclaw_dir).await?
+    if let Some((labaclaw_dir, workspace_dir)) =
+        load_persisted_workspace_dirs(default_labaclaw_dir).await?
     {
         return Ok((
-            zeroclaw_dir,
+            labaclaw_dir,
             workspace_dir,
             ConfigResolutionSource::ActiveWorkspaceMarker,
         ));
     }
 
     Ok((
-        default_zeroclaw_dir.to_path_buf(),
+        default_labaclaw_dir.to_path_buf(),
         default_workspace_dir.to_path_buf(),
         ConfigResolutionSource::DefaultConfigDir,
     ))
@@ -7468,7 +7481,7 @@ fn encrypt_channel_secrets(
 fn config_dir_creation_error(path: &Path) -> String {
     format!(
         "Failed to create config directory: {}. If running as an OpenRC service, \
-         ensure this path is writable by user 'zeroclaw'.",
+         ensure this path is writable by user 'labaclaw'.",
         path.display()
     )
 }
@@ -7492,7 +7505,7 @@ fn has_ollama_cloud_credential(config_api_key: Option<&str>) -> bool {
         return true;
     }
 
-    ["OLLAMA_API_KEY", "ZEROCLAW_API_KEY", "API_KEY"]
+    ["OLLAMA_API_KEY", "LABACLAW_API_KEY", "API_KEY"]
         .iter()
         .any(|name| {
             std::env::var(name)
@@ -7655,16 +7668,16 @@ fn apply_feishu_legacy_compat(
 
 impl Config {
     pub async fn load_or_init() -> Result<Self> {
-        let (default_zeroclaw_dir, default_workspace_dir) = default_config_and_workspace_dirs()?;
+        let (default_labaclaw_dir, default_workspace_dir) = default_config_and_workspace_dirs()?;
 
-        let (zeroclaw_dir, workspace_dir, resolution_source) =
-            resolve_runtime_config_dirs(&default_zeroclaw_dir, &default_workspace_dir).await?;
+        let (labaclaw_dir, workspace_dir, resolution_source) =
+            resolve_runtime_config_dirs(&default_labaclaw_dir, &default_workspace_dir).await?;
 
-        let config_path = zeroclaw_dir.join("config.toml");
+        let config_path = labaclaw_dir.join("config.toml");
 
-        fs::create_dir_all(&zeroclaw_dir)
+        fs::create_dir_all(&labaclaw_dir)
             .await
-            .with_context(|| config_dir_creation_error(&zeroclaw_dir))?;
+            .with_context(|| config_dir_creation_error(&labaclaw_dir))?;
         fs::create_dir_all(&workspace_dir)
             .await
             .context("Failed to create workspace directory")?;
@@ -7711,7 +7724,7 @@ impl Config {
             // Set computed paths that are skipped during serialization
             config.config_path = config_path.clone();
             config.workspace_dir = workspace_dir;
-            let store = crate::security::SecretStore::new(&zeroclaw_dir, config.secrets.encrypt);
+            let store = crate::security::SecretStore::new(&labaclaw_dir, config.secrets.encrypt);
             decrypt_optional_secret(&store, &mut config.api_key, "config.api_key")?;
             for (profile_name, profile) in config.model_providers.iter_mut() {
                 let secret_path = format!("config.model_providers.{profile_name}.api_key");
@@ -8935,26 +8948,22 @@ impl Config {
 
     /// Apply environment variable overrides to config
     pub fn apply_env_overrides(&mut self) {
-        let mut has_explicit_zeroclaw_api_key = false;
+        let mut has_explicit_labaclaw_api_key = false;
 
-        // API Key: ZEROCLAW_API_KEY always wins (explicit intent).
+        // API Key: LABACLAW_API_KEY always wins (explicit intent).
         // API_KEY (generic) is only used as a fallback when config has no api_key,
         // because API_KEY is a very common env var name that may be set by unrelated
         // tools and should not silently override an already-configured key.
-        if let Ok(key) = std::env::var("ZEROCLAW_API_KEY") {
-            if !key.is_empty() {
-                self.api_key = Some(key);
-                has_explicit_zeroclaw_api_key = true;
-            }
+        if let Some(key) = env_value_any(&["LABACLAW_API_KEY"]) {
+            self.api_key = Some(key);
+            has_explicit_labaclaw_api_key = true;
         } else if self.api_key.as_ref().map_or(true, |k| k.is_empty()) {
-            if let Ok(key) = std::env::var("API_KEY") {
-                if !key.is_empty() {
-                    self.api_key = Some(key);
-                }
+            if let Some(key) = env_value_any(&["API_KEY"]) {
+                self.api_key = Some(key);
             }
         }
         // API Key: GLM_API_KEY overrides when provider is a GLM/Zhipu variant.
-        if !has_explicit_zeroclaw_api_key
+        if !has_explicit_labaclaw_api_key
             && self.default_provider.as_deref().is_some_and(is_glm_alias)
         {
             if let Ok(key) = std::env::var("GLM_API_KEY") {
@@ -8965,7 +8974,7 @@ impl Config {
         }
 
         // API Key: ZAI_API_KEY overrides when provider is a Z.AI variant.
-        if !has_explicit_zeroclaw_api_key
+        if !has_explicit_labaclaw_api_key
             && self.default_provider.as_deref().is_some_and(is_zai_alias)
         {
             if let Ok(key) = std::env::var("ZAI_API_KEY") {
@@ -8976,121 +8985,106 @@ impl Config {
         }
 
         // Provider override precedence:
-        // 1) ZEROCLAW_PROVIDER always wins when set.
-        // 2) ZEROCLAW_MODEL_PROVIDER/MODEL_PROVIDER (Codex app-server style).
+        // 1) LABACLAW_PROVIDER always wins when set.
+        // 2) LABACLAW_MODEL_PROVIDER/MODEL_PROVIDER (Codex app-server style).
         // 3) Legacy PROVIDER is honored only when config still uses default provider.
-        if let Ok(provider) = std::env::var("ZEROCLAW_PROVIDER") {
-            if !provider.is_empty() {
-                self.default_provider = Some(provider);
-            }
-        } else if let Ok(provider) =
-            std::env::var("ZEROCLAW_MODEL_PROVIDER").or_else(|_| std::env::var("MODEL_PROVIDER"))
+        if let Some(provider) = env_value_any(&["LABACLAW_PROVIDER"]) {
+            self.default_provider = Some(provider);
+        } else if let Some(provider) = env_value_any(&["LABACLAW_MODEL_PROVIDER", "MODEL_PROVIDER"])
         {
-            if !provider.is_empty() {
-                self.default_provider = Some(provider);
-            }
-        } else if let Ok(provider) = std::env::var("PROVIDER") {
+            self.default_provider = Some(provider);
+        } else if let Some(provider) = env_value_any(&["PROVIDER"]) {
             let should_apply_legacy_provider =
                 self.default_provider.as_deref().map_or(true, |configured| {
                     configured
                         .trim()
                         .eq_ignore_ascii_case(DEFAULT_PROVIDER_NAME)
                 });
-            if should_apply_legacy_provider && !provider.is_empty() {
+            if should_apply_legacy_provider {
                 self.default_provider = Some(provider);
             }
         }
 
-        // Model: ZEROCLAW_MODEL or MODEL
-        if let Ok(model) = std::env::var("ZEROCLAW_MODEL").or_else(|_| std::env::var("MODEL")) {
-            if !model.is_empty() {
-                self.default_model = Some(model);
-            }
+        // Model: LABACLAW_MODEL or LABACLAW_MODEL or MODEL
+        if let Some(model) = env_value_any(&["LABACLAW_MODEL", "MODEL"]) {
+            self.default_model = Some(model);
         }
 
         // Apply named provider profile remapping (Codex app-server compatibility).
         self.apply_named_model_provider_profile();
 
-        // Workspace directory: ZEROCLAW_WORKSPACE
-        if let Ok(workspace) = std::env::var("ZEROCLAW_WORKSPACE") {
-            if !workspace.is_empty() {
-                let (_, workspace_dir) =
-                    resolve_config_dir_for_workspace(&PathBuf::from(workspace));
-                self.workspace_dir = workspace_dir;
-            }
+        // Workspace directory: LABACLAW_WORKSPACE
+        if let Some(workspace) = env_value_any(&["LABACLAW_WORKSPACE"]) {
+            let (_, workspace_dir) = resolve_config_dir_for_workspace(&PathBuf::from(workspace));
+            self.workspace_dir = workspace_dir;
         }
 
-        // Open-skills opt-in flag: ZEROCLAW_OPEN_SKILLS_ENABLED
-        if let Ok(flag) = std::env::var("ZEROCLAW_OPEN_SKILLS_ENABLED") {
+        // Open-skills opt-in flag: LABACLAW_OPEN_SKILLS_ENABLED
+        if let Ok(flag) = std::env::var("LABACLAW_OPEN_SKILLS_ENABLED") {
             if !flag.trim().is_empty() {
                 match flag.trim().to_ascii_lowercase().as_str() {
                     "1" | "true" | "yes" | "on" => self.skills.open_skills_enabled = true,
                     "0" | "false" | "no" | "off" => self.skills.open_skills_enabled = false,
                     _ => tracing::warn!(
-                        "Ignoring invalid ZEROCLAW_OPEN_SKILLS_ENABLED (valid: 1|0|true|false|yes|no|on|off)"
+                        "Ignoring invalid LABACLAW_OPEN_SKILLS_ENABLED (valid: 1|0|true|false|yes|no|on|off)"
                     ),
                 }
             }
         }
 
-        // Open-skills directory override: ZEROCLAW_OPEN_SKILLS_DIR
-        if let Ok(path) = std::env::var("ZEROCLAW_OPEN_SKILLS_DIR") {
+        // Open-skills directory override: LABACLAW_OPEN_SKILLS_DIR
+        if let Ok(path) = std::env::var("LABACLAW_OPEN_SKILLS_DIR") {
             let trimmed = path.trim();
             if !trimmed.is_empty() {
                 self.skills.open_skills_dir = Some(trimmed.to_string());
             }
         }
 
-        // Skills script-file audit override: ZEROCLAW_SKILLS_ALLOW_SCRIPTS
-        if let Ok(flag) = std::env::var("ZEROCLAW_SKILLS_ALLOW_SCRIPTS") {
+        // Skills script-file audit override: LABACLAW_SKILLS_ALLOW_SCRIPTS
+        if let Ok(flag) = std::env::var("LABACLAW_SKILLS_ALLOW_SCRIPTS") {
             if !flag.trim().is_empty() {
                 match flag.trim().to_ascii_lowercase().as_str() {
                     "1" | "true" | "yes" | "on" => self.skills.allow_scripts = true,
                     "0" | "false" | "no" | "off" => self.skills.allow_scripts = false,
                     _ => tracing::warn!(
-                        "Ignoring invalid ZEROCLAW_SKILLS_ALLOW_SCRIPTS (valid: 1|0|true|false|yes|no|on|off)"
+                        "Ignoring invalid LABACLAW_SKILLS_ALLOW_SCRIPTS (valid: 1|0|true|false|yes|no|on|off)"
                     ),
                 }
             }
         }
 
-        // Skills prompt mode override: ZEROCLAW_SKILLS_PROMPT_MODE
-        if let Ok(mode) = std::env::var("ZEROCLAW_SKILLS_PROMPT_MODE") {
+        // Skills prompt mode override: LABACLAW_SKILLS_PROMPT_MODE
+        if let Ok(mode) = std::env::var("LABACLAW_SKILLS_PROMPT_MODE") {
             if !mode.trim().is_empty() {
                 if let Some(parsed) = parse_skills_prompt_injection_mode(&mode) {
                     self.skills.prompt_injection_mode = parsed;
                 } else {
                     tracing::warn!(
-                        "Ignoring invalid ZEROCLAW_SKILLS_PROMPT_MODE (valid: full|compact)"
+                        "Ignoring invalid LABACLAW_SKILLS_PROMPT_MODE (valid: full|compact)"
                     );
                 }
             }
         }
 
-        // Gateway port: ZEROCLAW_GATEWAY_PORT or PORT
-        if let Ok(port_str) =
-            std::env::var("ZEROCLAW_GATEWAY_PORT").or_else(|_| std::env::var("PORT"))
-        {
+        // Gateway port: LABACLAW_GATEWAY_PORT or PORT
+        if let Some(port_str) = env_value_any(&["LABACLAW_GATEWAY_PORT", "PORT"]) {
             if let Ok(port) = port_str.parse::<u16>() {
                 self.gateway.port = port;
             }
         }
 
-        // Gateway host: ZEROCLAW_GATEWAY_HOST or HOST
-        if let Ok(host) = std::env::var("ZEROCLAW_GATEWAY_HOST").or_else(|_| std::env::var("HOST"))
-        {
-            if !host.is_empty() {
-                self.gateway.host = host;
-            }
+        // Gateway host: LABACLAW_GATEWAY_HOST or HOST
+        if let Some(host) = env_value_any(&["LABACLAW_GATEWAY_HOST", "HOST"]) {
+            self.gateway.host = host;
         }
 
-        // Allow public bind: ZEROCLAW_ALLOW_PUBLIC_BIND
-        if let Ok(val) = std::env::var("ZEROCLAW_ALLOW_PUBLIC_BIND") {
+        // Allow public bind: LABACLAW_ALLOW_PUBLIC_BIND
+        if let Some(val) = env_value_any(&["LABACLAW_ALLOW_PUBLIC_BIND"]) {
             self.gateway.allow_public_bind = val == "1" || val.eq_ignore_ascii_case("true");
         }
 
-        // Temperature: ZEROCLAW_TEMPERATURE
-        if let Ok(temp_str) = std::env::var("ZEROCLAW_TEMPERATURE") {
+        // Temperature: LABACLAW_TEMPERATURE
+        if let Some(temp_str) = env_value_any(&["LABACLAW_TEMPERATURE"]) {
             if let Ok(temp) = temp_str.parse::<f64>() {
                 if (0.0..=2.0).contains(&temp) {
                     self.default_temperature = temp;
@@ -9098,10 +9092,8 @@ impl Config {
             }
         }
 
-        // Reasoning override: ZEROCLAW_REASONING_ENABLED or REASONING_ENABLED
-        if let Ok(flag) = std::env::var("ZEROCLAW_REASONING_ENABLED")
-            .or_else(|_| std::env::var("REASONING_ENABLED"))
-        {
+        // Reasoning override: LABACLAW_REASONING_ENABLED or REASONING_ENABLED
+        if let Some(flag) = env_value_any(&["LABACLAW_REASONING_ENABLED", "REASONING_ENABLED"]) {
             let normalized = flag.trim().to_ascii_lowercase();
             match normalized.as_str() {
                 "1" | "true" | "yes" | "on" => self.runtime.reasoning_enabled = Some(true),
@@ -9110,10 +9102,10 @@ impl Config {
             }
         }
 
-        // Deprecated reasoning level alias: ZEROCLAW_REASONING_LEVEL or REASONING_LEVEL
-        let alias_level = std::env::var("ZEROCLAW_REASONING_LEVEL")
+        // Deprecated reasoning level alias: LABACLAW_REASONING_LEVEL or REASONING_LEVEL
+        let alias_level = std::env::var("LABACLAW_REASONING_LEVEL")
             .ok()
-            .map(|value| ("ZEROCLAW_REASONING_LEVEL", value))
+            .map(|value| ("LABACLAW_REASONING_LEVEL", value))
             .or_else(|| {
                 std::env::var("REASONING_LEVEL")
                     .ok()
@@ -9132,9 +9124,9 @@ impl Config {
             }
         }
 
-        // Provider transport override: ZEROCLAW_PROVIDER_TRANSPORT or PROVIDER_TRANSPORT
-        if let Ok(transport) = std::env::var("ZEROCLAW_PROVIDER_TRANSPORT")
-            .or_else(|_| std::env::var("PROVIDER_TRANSPORT"))
+        // Provider transport override: LABACLAW_PROVIDER_TRANSPORT or PROVIDER_TRANSPORT
+        if let Some(transport) =
+            env_value_any(&["LABACLAW_PROVIDER_TRANSPORT", "PROVIDER_TRANSPORT"])
         {
             if let Some(normalized) =
                 Self::normalize_provider_transport(Some(&transport), "env:provider_transport")
@@ -9143,9 +9135,9 @@ impl Config {
             }
         }
 
-        // Vision support override: ZEROCLAW_MODEL_SUPPORT_VISION or MODEL_SUPPORT_VISION
-        if let Ok(flag) = std::env::var("ZEROCLAW_MODEL_SUPPORT_VISION")
-            .or_else(|_| std::env::var("MODEL_SUPPORT_VISION"))
+        // Vision support override: LABACLAW_MODEL_SUPPORT_VISION or MODEL_SUPPORT_VISION
+        if let Some(flag) =
+            env_value_any(&["LABACLAW_MODEL_SUPPORT_VISION", "MODEL_SUPPORT_VISION"])
         {
             let normalized = flag.trim().to_ascii_lowercase();
             match normalized.as_str() {
@@ -9155,26 +9147,22 @@ impl Config {
             }
         }
 
-        // Web search enabled: ZEROCLAW_WEB_SEARCH_ENABLED or WEB_SEARCH_ENABLED
-        if let Ok(enabled) = std::env::var("ZEROCLAW_WEB_SEARCH_ENABLED")
-            .or_else(|_| std::env::var("WEB_SEARCH_ENABLED"))
+        // Web search enabled: LABACLAW_WEB_SEARCH_ENABLED or WEB_SEARCH_ENABLED
+        if let Some(enabled) = env_value_any(&["LABACLAW_WEB_SEARCH_ENABLED", "WEB_SEARCH_ENABLED"])
         {
             self.web_search.enabled = enabled == "1" || enabled.eq_ignore_ascii_case("true");
         }
 
-        // Web search provider: ZEROCLAW_WEB_SEARCH_PROVIDER or WEB_SEARCH_PROVIDER
-        if let Ok(provider) = std::env::var("ZEROCLAW_WEB_SEARCH_PROVIDER")
-            .or_else(|_| std::env::var("WEB_SEARCH_PROVIDER"))
+        // Web search provider: LABACLAW_WEB_SEARCH_PROVIDER or WEB_SEARCH_PROVIDER
+        if let Some(provider) =
+            env_value_any(&["LABACLAW_WEB_SEARCH_PROVIDER", "WEB_SEARCH_PROVIDER"])
         {
-            let provider = provider.trim();
-            if !provider.is_empty() {
-                self.web_search.provider = provider.to_string();
-            }
+            self.web_search.provider = provider;
         }
 
-        // Brave API key: ZEROCLAW_BRAVE_API_KEY or BRAVE_API_KEY
+        // Brave API key: LABACLAW_BRAVE_API_KEY or BRAVE_API_KEY
         if let Ok(api_key) =
-            std::env::var("ZEROCLAW_BRAVE_API_KEY").or_else(|_| std::env::var("BRAVE_API_KEY"))
+            std::env::var("LABACLAW_BRAVE_API_KEY").or_else(|_| std::env::var("BRAVE_API_KEY"))
         {
             let api_key = api_key.trim();
             if !api_key.is_empty() {
@@ -9182,8 +9170,8 @@ impl Config {
             }
         }
 
-        // Perplexity API key: ZEROCLAW_PERPLEXITY_API_KEY or PERPLEXITY_API_KEY
-        if let Ok(api_key) = std::env::var("ZEROCLAW_PERPLEXITY_API_KEY")
+        // Perplexity API key: LABACLAW_PERPLEXITY_API_KEY or PERPLEXITY_API_KEY
+        if let Ok(api_key) = std::env::var("LABACLAW_PERPLEXITY_API_KEY")
             .or_else(|_| std::env::var("PERPLEXITY_API_KEY"))
         {
             let api_key = api_key.trim();
@@ -9192,9 +9180,9 @@ impl Config {
             }
         }
 
-        // Exa API key: ZEROCLAW_EXA_API_KEY or EXA_API_KEY
+        // Exa API key: LABACLAW_EXA_API_KEY or EXA_API_KEY
         if let Ok(api_key) =
-            std::env::var("ZEROCLAW_EXA_API_KEY").or_else(|_| std::env::var("EXA_API_KEY"))
+            std::env::var("LABACLAW_EXA_API_KEY").or_else(|_| std::env::var("EXA_API_KEY"))
         {
             let api_key = api_key.trim();
             if !api_key.is_empty() {
@@ -9202,9 +9190,9 @@ impl Config {
             }
         }
 
-        // Jina API key: ZEROCLAW_JINA_API_KEY or JINA_API_KEY
+        // Jina API key: LABACLAW_JINA_API_KEY or JINA_API_KEY
         if let Ok(api_key) =
-            std::env::var("ZEROCLAW_JINA_API_KEY").or_else(|_| std::env::var("JINA_API_KEY"))
+            std::env::var("LABACLAW_JINA_API_KEY").or_else(|_| std::env::var("JINA_API_KEY"))
         {
             let api_key = api_key.trim();
             if !api_key.is_empty() {
@@ -9212,8 +9200,8 @@ impl Config {
             }
         }
 
-        // Web search max results: ZEROCLAW_WEB_SEARCH_MAX_RESULTS or WEB_SEARCH_MAX_RESULTS
-        if let Ok(max_results) = std::env::var("ZEROCLAW_WEB_SEARCH_MAX_RESULTS")
+        // Web search max results: LABACLAW_WEB_SEARCH_MAX_RESULTS or WEB_SEARCH_MAX_RESULTS
+        if let Ok(max_results) = std::env::var("LABACLAW_WEB_SEARCH_MAX_RESULTS")
             .or_else(|_| std::env::var("WEB_SEARCH_MAX_RESULTS"))
         {
             if let Ok(max_results) = max_results.parse::<usize>() {
@@ -9224,7 +9212,7 @@ impl Config {
         }
 
         // Web search fallback providers (comma-separated)
-        if let Ok(fallbacks) = std::env::var("ZEROCLAW_WEB_SEARCH_FALLBACK_PROVIDERS")
+        if let Ok(fallbacks) = std::env::var("LABACLAW_WEB_SEARCH_FALLBACK_PROVIDERS")
             .or_else(|_| std::env::var("WEB_SEARCH_FALLBACK_PROVIDERS"))
         {
             self.web_search.fallback_providers = fallbacks
@@ -9236,7 +9224,7 @@ impl Config {
         }
 
         // Web search retries per provider
-        if let Ok(retries) = std::env::var("ZEROCLAW_WEB_SEARCH_RETRIES_PER_PROVIDER")
+        if let Ok(retries) = std::env::var("LABACLAW_WEB_SEARCH_RETRIES_PER_PROVIDER")
             .or_else(|_| std::env::var("WEB_SEARCH_RETRIES_PER_PROVIDER"))
         {
             if let Ok(retries) = retries.parse::<u32>() {
@@ -9245,7 +9233,7 @@ impl Config {
         }
 
         // Web search retry backoff (ms)
-        if let Ok(backoff_ms) = std::env::var("ZEROCLAW_WEB_SEARCH_RETRY_BACKOFF_MS")
+        if let Ok(backoff_ms) = std::env::var("LABACLAW_WEB_SEARCH_RETRY_BACKOFF_MS")
             .or_else(|_| std::env::var("WEB_SEARCH_RETRY_BACKOFF_MS"))
         {
             if let Ok(backoff_ms) = backoff_ms.parse::<u64>() {
@@ -9256,7 +9244,7 @@ impl Config {
         }
 
         // Web search domain filter
-        if let Ok(filters) = std::env::var("ZEROCLAW_WEB_SEARCH_DOMAIN_FILTER")
+        if let Ok(filters) = std::env::var("LABACLAW_WEB_SEARCH_DOMAIN_FILTER")
             .or_else(|_| std::env::var("WEB_SEARCH_DOMAIN_FILTER"))
         {
             self.web_search.domain_filter = filters
@@ -9268,7 +9256,7 @@ impl Config {
         }
 
         // Web search language filter
-        if let Ok(filters) = std::env::var("ZEROCLAW_WEB_SEARCH_LANGUAGE_FILTER")
+        if let Ok(filters) = std::env::var("LABACLAW_WEB_SEARCH_LANGUAGE_FILTER")
             .or_else(|_| std::env::var("WEB_SEARCH_LANGUAGE_FILTER"))
         {
             self.web_search.language_filter = filters
@@ -9280,7 +9268,7 @@ impl Config {
         }
 
         // Web search country
-        if let Ok(country) = std::env::var("ZEROCLAW_WEB_SEARCH_COUNTRY")
+        if let Ok(country) = std::env::var("LABACLAW_WEB_SEARCH_COUNTRY")
             .or_else(|_| std::env::var("WEB_SEARCH_COUNTRY"))
         {
             let country = country.trim();
@@ -9292,7 +9280,7 @@ impl Config {
         }
 
         // Web search recency filter
-        if let Ok(recency_filter) = std::env::var("ZEROCLAW_WEB_SEARCH_RECENCY_FILTER")
+        if let Ok(recency_filter) = std::env::var("LABACLAW_WEB_SEARCH_RECENCY_FILTER")
             .or_else(|_| std::env::var("WEB_SEARCH_RECENCY_FILTER"))
         {
             let recency_filter = recency_filter.trim();
@@ -9304,7 +9292,7 @@ impl Config {
         }
 
         // Web search max tokens
-        if let Ok(max_tokens) = std::env::var("ZEROCLAW_WEB_SEARCH_MAX_TOKENS")
+        if let Ok(max_tokens) = std::env::var("LABACLAW_WEB_SEARCH_MAX_TOKENS")
             .or_else(|_| std::env::var("WEB_SEARCH_MAX_TOKENS"))
         {
             if let Ok(max_tokens) = max_tokens.parse::<u32>() {
@@ -9315,7 +9303,7 @@ impl Config {
         }
 
         // Web search max tokens per page
-        if let Ok(max_tokens_per_page) = std::env::var("ZEROCLAW_WEB_SEARCH_MAX_TOKENS_PER_PAGE")
+        if let Ok(max_tokens_per_page) = std::env::var("LABACLAW_WEB_SEARCH_MAX_TOKENS_PER_PAGE")
             .or_else(|_| std::env::var("WEB_SEARCH_MAX_TOKENS_PER_PAGE"))
         {
             if let Ok(max_tokens_per_page) = max_tokens_per_page.parse::<u32>() {
@@ -9326,7 +9314,7 @@ impl Config {
         }
 
         // Exa search type
-        if let Ok(search_type) = std::env::var("ZEROCLAW_WEB_SEARCH_EXA_SEARCH_TYPE")
+        if let Ok(search_type) = std::env::var("LABACLAW_WEB_SEARCH_EXA_SEARCH_TYPE")
             .or_else(|_| std::env::var("WEB_SEARCH_EXA_SEARCH_TYPE"))
         {
             let search_type = search_type.trim();
@@ -9336,7 +9324,7 @@ impl Config {
         }
 
         // Exa include text
-        if let Ok(include_text) = std::env::var("ZEROCLAW_WEB_SEARCH_EXA_INCLUDE_TEXT")
+        if let Ok(include_text) = std::env::var("LABACLAW_WEB_SEARCH_EXA_INCLUDE_TEXT")
             .or_else(|_| std::env::var("WEB_SEARCH_EXA_INCLUDE_TEXT"))
         {
             self.web_search.exa_include_text =
@@ -9344,7 +9332,7 @@ impl Config {
         }
 
         // Jina site filters
-        if let Ok(filters) = std::env::var("ZEROCLAW_WEB_SEARCH_JINA_SITE_FILTERS")
+        if let Ok(filters) = std::env::var("LABACLAW_WEB_SEARCH_JINA_SITE_FILTERS")
             .or_else(|_| std::env::var("WEB_SEARCH_JINA_SITE_FILTERS"))
         {
             self.web_search.jina_site_filters = filters
@@ -9355,8 +9343,8 @@ impl Config {
                 .collect();
         }
 
-        // Web search timeout: ZEROCLAW_WEB_SEARCH_TIMEOUT_SECS or WEB_SEARCH_TIMEOUT_SECS
-        if let Ok(timeout_secs) = std::env::var("ZEROCLAW_WEB_SEARCH_TIMEOUT_SECS")
+        // Web search timeout: LABACLAW_WEB_SEARCH_TIMEOUT_SECS or WEB_SEARCH_TIMEOUT_SECS
+        if let Ok(timeout_secs) = std::env::var("LABACLAW_WEB_SEARCH_TIMEOUT_SECS")
             .or_else(|_| std::env::var("WEB_SEARCH_TIMEOUT_SECS"))
         {
             if let Ok(timeout_secs) = timeout_secs.parse::<u64>() {
@@ -9367,7 +9355,7 @@ impl Config {
         }
 
         // Shared URL-access policy toggles and lists
-        if let Ok(value) = std::env::var("ZEROCLAW_URL_ACCESS_BLOCK_PRIVATE_IP")
+        if let Ok(value) = std::env::var("LABACLAW_URL_ACCESS_BLOCK_PRIVATE_IP")
             .or_else(|_| std::env::var("URL_ACCESS_BLOCK_PRIVATE_IP"))
         {
             let normalized = value.trim().to_ascii_lowercase();
@@ -9378,7 +9366,7 @@ impl Config {
             }
         }
 
-        if let Ok(value) = std::env::var("ZEROCLAW_URL_ACCESS_ALLOW_LOOPBACK")
+        if let Ok(value) = std::env::var("LABACLAW_URL_ACCESS_ALLOW_LOOPBACK")
             .or_else(|_| std::env::var("URL_ACCESS_ALLOW_LOOPBACK"))
         {
             let normalized = value.trim().to_ascii_lowercase();
@@ -9389,7 +9377,7 @@ impl Config {
             }
         }
 
-        if let Ok(value) = std::env::var("ZEROCLAW_URL_ACCESS_REQUIRE_FIRST_VISIT_APPROVAL")
+        if let Ok(value) = std::env::var("LABACLAW_URL_ACCESS_REQUIRE_FIRST_VISIT_APPROVAL")
             .or_else(|_| std::env::var("URL_ACCESS_REQUIRE_FIRST_VISIT_APPROVAL"))
         {
             let normalized = value.trim().to_ascii_lowercase();
@@ -9404,7 +9392,7 @@ impl Config {
             }
         }
 
-        if let Ok(value) = std::env::var("ZEROCLAW_URL_ACCESS_ENFORCE_DOMAIN_ALLOWLIST")
+        if let Ok(value) = std::env::var("LABACLAW_URL_ACCESS_ENFORCE_DOMAIN_ALLOWLIST")
             .or_else(|_| std::env::var("URL_ACCESS_ENFORCE_DOMAIN_ALLOWLIST"))
         {
             let normalized = value.trim().to_ascii_lowercase();
@@ -9419,7 +9407,7 @@ impl Config {
             }
         }
 
-        if let Ok(value) = std::env::var("ZEROCLAW_URL_ACCESS_ALLOW_CIDRS")
+        if let Ok(value) = std::env::var("LABACLAW_URL_ACCESS_ALLOW_CIDRS")
             .or_else(|_| std::env::var("URL_ACCESS_ALLOW_CIDRS"))
         {
             self.security.url_access.allow_cidrs = value
@@ -9430,7 +9418,7 @@ impl Config {
                 .collect();
         }
 
-        if let Ok(value) = std::env::var("ZEROCLAW_URL_ACCESS_ALLOW_DOMAINS")
+        if let Ok(value) = std::env::var("LABACLAW_URL_ACCESS_ALLOW_DOMAINS")
             .or_else(|_| std::env::var("URL_ACCESS_ALLOW_DOMAINS"))
         {
             self.security.url_access.allow_domains = value
@@ -9441,7 +9429,7 @@ impl Config {
                 .collect();
         }
 
-        if let Ok(value) = std::env::var("ZEROCLAW_URL_ACCESS_DOMAIN_ALLOWLIST")
+        if let Ok(value) = std::env::var("LABACLAW_URL_ACCESS_DOMAIN_ALLOWLIST")
             .or_else(|_| std::env::var("URL_ACCESS_DOMAIN_ALLOWLIST"))
         {
             self.security.url_access.domain_allowlist = value
@@ -9452,7 +9440,7 @@ impl Config {
                 .collect();
         }
 
-        if let Ok(value) = std::env::var("ZEROCLAW_URL_ACCESS_DOMAIN_BLOCKLIST")
+        if let Ok(value) = std::env::var("LABACLAW_URL_ACCESS_DOMAIN_BLOCKLIST")
             .or_else(|_| std::env::var("URL_ACCESS_DOMAIN_BLOCKLIST"))
         {
             self.security.url_access.domain_blocklist = value
@@ -9463,7 +9451,7 @@ impl Config {
                 .collect();
         }
 
-        if let Ok(value) = std::env::var("ZEROCLAW_URL_ACCESS_APPROVED_DOMAINS")
+        if let Ok(value) = std::env::var("LABACLAW_URL_ACCESS_APPROVED_DOMAINS")
             .or_else(|_| std::env::var("URL_ACCESS_APPROVED_DOMAINS"))
         {
             self.security.url_access.approved_domains = value
@@ -9474,32 +9462,32 @@ impl Config {
                 .collect();
         }
 
-        // Storage provider key (optional backend override): ZEROCLAW_STORAGE_PROVIDER
-        if let Ok(provider) = std::env::var("ZEROCLAW_STORAGE_PROVIDER") {
+        // Storage provider key (optional backend override): LABACLAW_STORAGE_PROVIDER
+        if let Ok(provider) = std::env::var("LABACLAW_STORAGE_PROVIDER") {
             let provider = provider.trim();
             if !provider.is_empty() {
                 self.storage.provider.config.provider = provider.to_string();
             }
         }
 
-        // Storage connection URL (for remote backends): ZEROCLAW_STORAGE_DB_URL
-        if let Ok(db_url) = std::env::var("ZEROCLAW_STORAGE_DB_URL") {
+        // Storage connection URL (for remote backends): LABACLAW_STORAGE_DB_URL
+        if let Ok(db_url) = std::env::var("LABACLAW_STORAGE_DB_URL") {
             let db_url = db_url.trim();
             if !db_url.is_empty() {
                 self.storage.provider.config.db_url = Some(db_url.to_string());
             }
         }
 
-        // Storage connect timeout: ZEROCLAW_STORAGE_CONNECT_TIMEOUT_SECS
-        if let Ok(timeout_secs) = std::env::var("ZEROCLAW_STORAGE_CONNECT_TIMEOUT_SECS") {
+        // Storage connect timeout: LABACLAW_STORAGE_CONNECT_TIMEOUT_SECS
+        if let Ok(timeout_secs) = std::env::var("LABACLAW_STORAGE_CONNECT_TIMEOUT_SECS") {
             if let Ok(timeout_secs) = timeout_secs.parse::<u64>() {
                 if timeout_secs > 0 {
                     self.storage.provider.config.connect_timeout_secs = Some(timeout_secs);
                 }
             }
         }
-        // Proxy enabled flag: ZEROCLAW_PROXY_ENABLED
-        let explicit_proxy_enabled = std::env::var("ZEROCLAW_PROXY_ENABLED")
+        // Proxy enabled flag: LABACLAW_PROXY_ENABLED
+        let explicit_proxy_enabled = std::env::var("LABACLAW_PROXY_ENABLED")
             .ok()
             .as_deref()
             .and_then(parse_proxy_enabled);
@@ -9507,28 +9495,28 @@ impl Config {
             self.proxy.enabled = enabled;
         }
 
-        // Proxy URLs: ZEROCLAW_* wins, then generic *PROXY vars.
+        // Proxy URLs: LABACLAW_* wins, then generic *PROXY vars.
         let mut proxy_url_overridden = false;
         if let Ok(proxy_url) =
-            std::env::var("ZEROCLAW_HTTP_PROXY").or_else(|_| std::env::var("HTTP_PROXY"))
+            std::env::var("LABACLAW_HTTP_PROXY").or_else(|_| std::env::var("HTTP_PROXY"))
         {
             self.proxy.http_proxy = normalize_proxy_url_option(Some(&proxy_url));
             proxy_url_overridden = true;
         }
         if let Ok(proxy_url) =
-            std::env::var("ZEROCLAW_HTTPS_PROXY").or_else(|_| std::env::var("HTTPS_PROXY"))
+            std::env::var("LABACLAW_HTTPS_PROXY").or_else(|_| std::env::var("HTTPS_PROXY"))
         {
             self.proxy.https_proxy = normalize_proxy_url_option(Some(&proxy_url));
             proxy_url_overridden = true;
         }
         if let Ok(proxy_url) =
-            std::env::var("ZEROCLAW_ALL_PROXY").or_else(|_| std::env::var("ALL_PROXY"))
+            std::env::var("LABACLAW_ALL_PROXY").or_else(|_| std::env::var("ALL_PROXY"))
         {
             self.proxy.all_proxy = normalize_proxy_url_option(Some(&proxy_url));
             proxy_url_overridden = true;
         }
         if let Ok(no_proxy) =
-            std::env::var("ZEROCLAW_NO_PROXY").or_else(|_| std::env::var("NO_PROXY"))
+            std::env::var("LABACLAW_NO_PROXY").or_else(|_| std::env::var("NO_PROXY"))
         {
             self.proxy.no_proxy = normalize_no_proxy_list(vec![no_proxy]);
         }
@@ -9541,18 +9529,18 @@ impl Config {
         }
 
         // Proxy scope and service selectors.
-        if let Ok(scope_raw) = std::env::var("ZEROCLAW_PROXY_SCOPE") {
+        if let Ok(scope_raw) = std::env::var("LABACLAW_PROXY_SCOPE") {
             if let Some(scope) = parse_proxy_scope(&scope_raw) {
                 self.proxy.scope = scope;
             } else {
                 tracing::warn!(
                     scope = %scope_raw,
-                    "Ignoring invalid ZEROCLAW_PROXY_SCOPE (valid: environment|zeroclaw|services)"
+                    "Ignoring invalid LABACLAW_PROXY_SCOPE (valid: environment|labaclaw|services)"
                 );
             }
         }
 
-        if let Ok(services_raw) = std::env::var("ZEROCLAW_PROXY_SERVICES") {
+        if let Ok(services_raw) = std::env::var("LABACLAW_PROXY_SERVICES") {
             self.proxy.services = normalize_service_list(vec![services_raw]);
         }
 
@@ -9571,11 +9559,11 @@ impl Config {
     pub async fn save(&self) -> Result<()> {
         // Encrypt secrets before serialization
         let mut config_to_save = self.clone();
-        let zeroclaw_dir = self
+        let labaclaw_dir = self
             .config_path
             .parent()
             .context("Config path must have a parent directory")?;
-        let store = crate::security::SecretStore::new(zeroclaw_dir, self.secrets.encrypt);
+        let store = crate::security::SecretStore::new(labaclaw_dir, self.secrets.encrypt);
 
         encrypt_optional_secret(&store, &mut config_to_save.api_key, "config.api_key")?;
         for (profile_name, profile) in config_to_save.model_providers.iter_mut() {
@@ -9785,7 +9773,7 @@ fn sync_directory(path: &Path) -> Result<()> {
 
 /// ACP (Agent Client Protocol) channel configuration.
 ///
-/// Enables ZeroClaw to act as an ACP client, connecting to an OpenCode ACP server
+/// Enables LabaClaw to act as an ACP client, connecting to an OpenCode ACP server
 /// via `opencode acp` command for JSON-RPC 2.0 communication over stdio.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AcpConfig {
@@ -10013,10 +10001,10 @@ mod tests {
 
     #[test]
     async fn config_dir_creation_error_mentions_openrc_and_path() {
-        let msg = config_dir_creation_error(Path::new("/etc/zeroclaw"));
-        assert!(msg.contains("/etc/zeroclaw"));
+        let msg = config_dir_creation_error(Path::new("/etc/labaclaw"));
+        assert!(msg.contains("/etc/labaclaw"));
         assert!(msg.contains("OpenRC"));
-        assert!(msg.contains("zeroclaw"));
+        assert!(msg.contains("labaclaw"));
     }
 
     #[test]
@@ -11799,7 +11787,7 @@ allowed_sender_ids = ["U111", "U222"]
             phone_number_id: Some("123".into()),
             verify_token: Some("ver".into()),
             app_secret: None,
-            session_path: Some("~/.zeroclaw/state/whatsapp-web/session.db".into()),
+            session_path: Some("~/.labaclaw/state/whatsapp-web/session.db".into()),
             pair_phone: None,
             pair_code: None,
             allowed_numbers: vec!["+1".into()],
@@ -11815,7 +11803,7 @@ allowed_sender_ids = ["U111", "U222"]
             phone_number_id: None,
             verify_token: None,
             app_secret: None,
-            session_path: Some("~/.zeroclaw/state/whatsapp-web/session.db".into()),
+            session_path: Some("~/.labaclaw/state/whatsapp-web/session.db".into()),
             pair_phone: None,
             pair_code: None,
             allowed_numbers: vec![],
@@ -12351,13 +12339,13 @@ default_temperature = 0.7
 
     fn clear_proxy_env_test_vars() {
         for key in [
-            "ZEROCLAW_PROXY_ENABLED",
-            "ZEROCLAW_HTTP_PROXY",
-            "ZEROCLAW_HTTPS_PROXY",
-            "ZEROCLAW_ALL_PROXY",
-            "ZEROCLAW_NO_PROXY",
-            "ZEROCLAW_PROXY_SCOPE",
-            "ZEROCLAW_PROXY_SERVICES",
+            "LABACLAW_PROXY_ENABLED",
+            "LABACLAW_HTTP_PROXY",
+            "LABACLAW_HTTPS_PROXY",
+            "LABACLAW_ALL_PROXY",
+            "LABACLAW_NO_PROXY",
+            "LABACLAW_PROXY_SCOPE",
+            "LABACLAW_PROXY_SERVICES",
             "HTTP_PROXY",
             "HTTPS_PROXY",
             "ALL_PROXY",
@@ -12377,11 +12365,11 @@ default_temperature = 0.7
         let mut config = Config::default();
         assert!(config.api_key.is_none());
 
-        std::env::set_var("ZEROCLAW_API_KEY", "sk-test-env-key");
+        std::env::set_var("LABACLAW_API_KEY", "sk-test-env-key");
         config.apply_env_overrides();
         assert_eq!(config.api_key.as_deref(), Some("sk-test-env-key"));
 
-        std::env::remove_var("ZEROCLAW_API_KEY");
+        std::env::remove_var("LABACLAW_API_KEY");
     }
 
     #[test]
@@ -12389,7 +12377,7 @@ default_temperature = 0.7
         let _env_guard = env_override_lock().await;
         let mut config = Config::default();
 
-        std::env::remove_var("ZEROCLAW_API_KEY");
+        std::env::remove_var("LABACLAW_API_KEY");
         std::env::set_var("API_KEY", "sk-fallback-key");
         config.apply_env_overrides();
         assert_eq!(config.api_key.as_deref(), Some("sk-fallback-key"));
@@ -12403,7 +12391,7 @@ default_temperature = 0.7
         let mut config = Config::default();
         config.api_key = Some("sk-config-key".to_string());
 
-        std::env::remove_var("ZEROCLAW_API_KEY");
+        std::env::remove_var("LABACLAW_API_KEY");
         std::env::set_var("API_KEY", "sk-generic-env-key");
         config.apply_env_overrides();
         // Generic API_KEY must NOT override an existing config key
@@ -12418,12 +12406,12 @@ default_temperature = 0.7
         let mut config = Config::default();
         config.api_key = Some("sk-config-key".to_string());
 
-        std::env::set_var("ZEROCLAW_API_KEY", "sk-explicit-env-key");
+        std::env::set_var("LABACLAW_API_KEY", "sk-explicit-env-key");
         config.apply_env_overrides();
-        // ZEROCLAW_API_KEY should always win, even over config
+        // LABACLAW_API_KEY should always win, even over config
         assert_eq!(config.api_key.as_deref(), Some("sk-explicit-env-key"));
 
-        std::env::remove_var("ZEROCLAW_API_KEY");
+        std::env::remove_var("LABACLAW_API_KEY");
     }
 
     #[test]
@@ -12431,11 +12419,11 @@ default_temperature = 0.7
         let _env_guard = env_override_lock().await;
         let mut config = Config::default();
 
-        std::env::set_var("ZEROCLAW_PROVIDER", "anthropic");
+        std::env::set_var("LABACLAW_PROVIDER", "anthropic");
         config.apply_env_overrides();
         assert_eq!(config.default_provider.as_deref(), Some("anthropic"));
 
-        std::env::remove_var("ZEROCLAW_PROVIDER");
+        std::env::remove_var("LABACLAW_PROVIDER");
     }
 
     #[test]
@@ -12443,12 +12431,12 @@ default_temperature = 0.7
         let _env_guard = env_override_lock().await;
         let mut config = Config::default();
 
-        std::env::remove_var("ZEROCLAW_PROVIDER");
-        std::env::set_var("ZEROCLAW_MODEL_PROVIDER", "openai-codex");
+        std::env::remove_var("LABACLAW_PROVIDER");
+        std::env::set_var("LABACLAW_MODEL_PROVIDER", "openai-codex");
         config.apply_env_overrides();
         assert_eq!(config.default_provider.as_deref(), Some("openai-codex"));
 
-        std::env::remove_var("ZEROCLAW_MODEL_PROVIDER");
+        std::env::remove_var("LABACLAW_MODEL_PROVIDER");
     }
 
     #[test]
@@ -12492,10 +12480,10 @@ requires_openai_auth = true
             SkillsPromptInjectionMode::Compact
         );
 
-        std::env::set_var("ZEROCLAW_OPEN_SKILLS_ENABLED", "true");
-        std::env::set_var("ZEROCLAW_OPEN_SKILLS_DIR", "/tmp/open-skills");
-        std::env::set_var("ZEROCLAW_SKILLS_ALLOW_SCRIPTS", "yes");
-        std::env::set_var("ZEROCLAW_SKILLS_PROMPT_MODE", "compact");
+        std::env::set_var("LABACLAW_OPEN_SKILLS_ENABLED", "true");
+        std::env::set_var("LABACLAW_OPEN_SKILLS_DIR", "/tmp/open-skills");
+        std::env::set_var("LABACLAW_SKILLS_ALLOW_SCRIPTS", "yes");
+        std::env::set_var("LABACLAW_SKILLS_PROMPT_MODE", "compact");
         config.apply_env_overrides();
 
         assert!(config.skills.open_skills_enabled);
@@ -12509,10 +12497,10 @@ requires_openai_auth = true
             SkillsPromptInjectionMode::Compact
         );
 
-        std::env::remove_var("ZEROCLAW_OPEN_SKILLS_ENABLED");
-        std::env::remove_var("ZEROCLAW_OPEN_SKILLS_DIR");
-        std::env::remove_var("ZEROCLAW_SKILLS_ALLOW_SCRIPTS");
-        std::env::remove_var("ZEROCLAW_SKILLS_PROMPT_MODE");
+        std::env::remove_var("LABACLAW_OPEN_SKILLS_ENABLED");
+        std::env::remove_var("LABACLAW_OPEN_SKILLS_DIR");
+        std::env::remove_var("LABACLAW_SKILLS_ALLOW_SCRIPTS");
+        std::env::remove_var("LABACLAW_SKILLS_PROMPT_MODE");
     }
 
     #[test]
@@ -12523,9 +12511,9 @@ requires_openai_auth = true
         config.skills.allow_scripts = true;
         config.skills.prompt_injection_mode = SkillsPromptInjectionMode::Compact;
 
-        std::env::set_var("ZEROCLAW_OPEN_SKILLS_ENABLED", "maybe");
-        std::env::set_var("ZEROCLAW_SKILLS_ALLOW_SCRIPTS", "maybe");
-        std::env::set_var("ZEROCLAW_SKILLS_PROMPT_MODE", "invalid");
+        std::env::set_var("LABACLAW_OPEN_SKILLS_ENABLED", "maybe");
+        std::env::set_var("LABACLAW_SKILLS_ALLOW_SCRIPTS", "maybe");
+        std::env::set_var("LABACLAW_SKILLS_PROMPT_MODE", "invalid");
         config.apply_env_overrides();
 
         assert!(config.skills.open_skills_enabled);
@@ -12534,9 +12522,9 @@ requires_openai_auth = true
             config.skills.prompt_injection_mode,
             SkillsPromptInjectionMode::Compact
         );
-        std::env::remove_var("ZEROCLAW_OPEN_SKILLS_ENABLED");
-        std::env::remove_var("ZEROCLAW_SKILLS_ALLOW_SCRIPTS");
-        std::env::remove_var("ZEROCLAW_SKILLS_PROMPT_MODE");
+        std::env::remove_var("LABACLAW_OPEN_SKILLS_ENABLED");
+        std::env::remove_var("LABACLAW_SKILLS_ALLOW_SCRIPTS");
+        std::env::remove_var("LABACLAW_SKILLS_PROMPT_MODE");
     }
 
     #[test]
@@ -12544,7 +12532,7 @@ requires_openai_auth = true
         let _env_guard = env_override_lock().await;
         let mut config = Config::default();
 
-        std::env::remove_var("ZEROCLAW_PROVIDER");
+        std::env::remove_var("LABACLAW_PROVIDER");
         std::env::set_var("PROVIDER", "openai");
         config.apply_env_overrides();
         assert_eq!(config.default_provider.as_deref(), Some("openai"));
@@ -12560,7 +12548,7 @@ requires_openai_auth = true
             ..Config::default()
         };
 
-        std::env::remove_var("ZEROCLAW_PROVIDER");
+        std::env::remove_var("LABACLAW_PROVIDER");
         std::env::set_var("PROVIDER", "openrouter");
         config.apply_env_overrides();
         assert_eq!(
@@ -12579,12 +12567,12 @@ requires_openai_auth = true
             ..Config::default()
         };
 
-        std::env::set_var("ZEROCLAW_PROVIDER", "openrouter");
+        std::env::set_var("LABACLAW_PROVIDER", "openrouter");
         std::env::set_var("PROVIDER", "anthropic");
         config.apply_env_overrides();
         assert_eq!(config.default_provider.as_deref(), Some("openrouter"));
 
-        std::env::remove_var("ZEROCLAW_PROVIDER");
+        std::env::remove_var("LABACLAW_PROVIDER");
         std::env::remove_var("PROVIDER");
     }
 
@@ -12763,12 +12751,12 @@ provider_api = "not-a-real-mode"
             ..Config::default()
         };
 
-        std::env::set_var("ZEROCLAW_API_KEY", "sk-explicit-env-key");
+        std::env::set_var("LABACLAW_API_KEY", "sk-explicit-env-key");
         std::env::set_var("GLM_API_KEY", "glm-regional-key");
         config.apply_env_overrides();
         assert_eq!(config.api_key.as_deref(), Some("sk-explicit-env-key"));
 
-        std::env::remove_var("ZEROCLAW_API_KEY");
+        std::env::remove_var("LABACLAW_API_KEY");
         std::env::remove_var("GLM_API_KEY");
     }
 
@@ -12795,12 +12783,12 @@ provider_api = "not-a-real-mode"
             ..Config::default()
         };
 
-        std::env::set_var("ZEROCLAW_API_KEY", "sk-explicit-env-key");
+        std::env::set_var("LABACLAW_API_KEY", "sk-explicit-env-key");
         std::env::set_var("ZAI_API_KEY", "zai-regional-key");
         config.apply_env_overrides();
         assert_eq!(config.api_key.as_deref(), Some("sk-explicit-env-key"));
 
-        std::env::remove_var("ZEROCLAW_API_KEY");
+        std::env::remove_var("LABACLAW_API_KEY");
         std::env::remove_var("ZAI_API_KEY");
     }
 
@@ -12809,11 +12797,11 @@ provider_api = "not-a-real-mode"
         let _env_guard = env_override_lock().await;
         let mut config = Config::default();
 
-        std::env::set_var("ZEROCLAW_MODEL", "gpt-4o");
+        std::env::set_var("LABACLAW_MODEL", "gpt-4o");
         config.apply_env_overrides();
         assert_eq!(config.default_model.as_deref(), Some("gpt-4o"));
 
-        std::env::remove_var("ZEROCLAW_MODEL");
+        std::env::remove_var("LABACLAW_MODEL");
     }
 
     #[test]
@@ -13212,7 +13200,7 @@ provider_api = "not-a-real-mode"
         let _env_guard = env_override_lock().await;
         let mut config = Config::default();
 
-        std::env::remove_var("ZEROCLAW_MODEL");
+        std::env::remove_var("LABACLAW_MODEL");
         std::env::set_var("MODEL", "anthropic/claude-3.5-sonnet");
         config.apply_env_overrides();
         assert_eq!(
@@ -13228,11 +13216,11 @@ provider_api = "not-a-real-mode"
         let _env_guard = env_override_lock().await;
         let mut config = Config::default();
 
-        std::env::set_var("ZEROCLAW_WORKSPACE", "/custom/workspace");
+        std::env::set_var("LABACLAW_WORKSPACE", "/custom/workspace");
         config.apply_env_overrides();
         assert_eq!(config.workspace_dir, PathBuf::from("/custom/workspace"));
 
-        std::env::remove_var("ZEROCLAW_WORKSPACE");
+        std::env::remove_var("LABACLAW_WORKSPACE");
     }
 
     #[test]
@@ -13242,7 +13230,7 @@ provider_api = "not-a-real-mode"
         let default_workspace_dir = default_config_dir.join("workspace");
         let workspace_dir = default_config_dir.join("profile-a");
 
-        std::env::set_var("ZEROCLAW_WORKSPACE", &workspace_dir);
+        std::env::set_var("LABACLAW_WORKSPACE", &workspace_dir);
         let (config_dir, resolved_workspace_dir, source) =
             resolve_runtime_config_dirs(&default_config_dir, &default_workspace_dir)
                 .await
@@ -13252,7 +13240,7 @@ provider_api = "not-a-real-mode"
         assert_eq!(config_dir, workspace_dir);
         assert_eq!(resolved_workspace_dir, workspace_dir.join("workspace"));
 
-        std::env::remove_var("ZEROCLAW_WORKSPACE");
+        std::env::remove_var("LABACLAW_WORKSPACE");
         let _ = fs::remove_dir_all(default_config_dir).await;
     }
 
@@ -13273,8 +13261,8 @@ provider_api = "not-a-real-mode"
             .await
             .unwrap();
 
-        std::env::set_var("ZEROCLAW_CONFIG_DIR", &explicit_config_dir);
-        std::env::remove_var("ZEROCLAW_WORKSPACE");
+        std::env::set_var("LABACLAW_CONFIG_DIR", &explicit_config_dir);
+        std::env::remove_var("LABACLAW_WORKSPACE");
 
         let (config_dir, resolved_workspace_dir, source) =
             resolve_runtime_config_dirs(&default_config_dir, &default_workspace_dir)
@@ -13288,7 +13276,7 @@ provider_api = "not-a-real-mode"
             explicit_config_dir.join("workspace")
         );
 
-        std::env::remove_var("ZEROCLAW_CONFIG_DIR");
+        std::env::remove_var("LABACLAW_CONFIG_DIR");
         let _ = fs::remove_dir_all(default_config_dir).await;
     }
 
@@ -13300,7 +13288,7 @@ provider_api = "not-a-real-mode"
         let marker_config_dir = default_config_dir.join("profiles").join("alpha");
         let state_path = default_config_dir.join(ACTIVE_WORKSPACE_STATE_FILE);
 
-        std::env::remove_var("ZEROCLAW_WORKSPACE");
+        std::env::remove_var("LABACLAW_WORKSPACE");
         fs::create_dir_all(&default_config_dir).await.unwrap();
         fs::create_dir_all(&marker_config_dir).await.unwrap();
         fs::write(
@@ -13336,7 +13324,7 @@ provider_api = "not-a-real-mode"
         let marker_config_dir = default_config_dir.join("profiles").join("missing-alpha");
         let state_path = default_config_dir.join(ACTIVE_WORKSPACE_STATE_FILE);
 
-        std::env::remove_var("ZEROCLAW_WORKSPACE");
+        std::env::remove_var("LABACLAW_WORKSPACE");
         fs::create_dir_all(&default_config_dir).await.unwrap();
         let state = ActiveWorkspaceState {
             config_dir: marker_config_dir.to_string_lossy().into_owned(),
@@ -13365,7 +13353,7 @@ provider_api = "not-a-real-mode"
         let marker_config_dir = default_config_dir.join("profiles").join("alpha-no-config");
         let state_path = default_config_dir.join(ACTIVE_WORKSPACE_STATE_FILE);
 
-        std::env::remove_var("ZEROCLAW_WORKSPACE");
+        std::env::remove_var("LABACLAW_WORKSPACE");
         fs::create_dir_all(&default_config_dir).await.unwrap();
         fs::create_dir_all(&marker_config_dir).await.unwrap();
         let state = ActiveWorkspaceState {
@@ -13394,7 +13382,7 @@ provider_api = "not-a-real-mode"
             .map(PathBuf::from)
             .unwrap_or_else(|| std::env::current_dir().unwrap());
         let non_temp_root = base.join(format!("zeroclaw_marker_guard_{}", uuid::Uuid::new_v4()));
-        let default_config_dir = non_temp_root.join(".zeroclaw");
+        let default_config_dir = non_temp_root.join(".labaclaw");
         let default_workspace_dir = default_config_dir.join("workspace");
         let marker_config_dir = std::env::temp_dir().join(format!(
             "zeroclaw_temp_marker_profile_{}",
@@ -13407,7 +13395,7 @@ provider_api = "not-a-real-mode"
             return;
         }
 
-        std::env::remove_var("ZEROCLAW_WORKSPACE");
+        std::env::remove_var("LABACLAW_WORKSPACE");
         fs::create_dir_all(&default_config_dir).await.unwrap();
         fs::create_dir_all(&marker_config_dir).await.unwrap();
         fs::write(
@@ -13442,7 +13430,7 @@ provider_api = "not-a-real-mode"
         let default_config_dir = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
         let default_workspace_dir = default_config_dir.join("workspace");
 
-        std::env::remove_var("ZEROCLAW_WORKSPACE");
+        std::env::remove_var("LABACLAW_WORKSPACE");
         let (config_dir, resolved_workspace_dir, source) =
             resolve_runtime_config_dirs(&default_config_dir, &default_workspace_dir)
                 .await
@@ -13464,7 +13452,7 @@ provider_api = "not-a-real-mode"
 
         let original_home = std::env::var("HOME").ok();
         std::env::set_var("HOME", &temp_home);
-        std::env::set_var("ZEROCLAW_WORKSPACE", &workspace_dir);
+        std::env::set_var("LABACLAW_WORKSPACE", &workspace_dir);
 
         let config = Config::load_or_init().await.unwrap();
 
@@ -13472,7 +13460,7 @@ provider_api = "not-a-real-mode"
         assert_eq!(config.config_path, workspace_dir.join("config.toml"));
         assert!(workspace_dir.join("config.toml").exists());
 
-        std::env::remove_var("ZEROCLAW_WORKSPACE");
+        std::env::remove_var("LABACLAW_WORKSPACE");
         if let Some(home) = original_home {
             std::env::set_var("HOME", home);
         } else {
@@ -13487,11 +13475,11 @@ provider_api = "not-a-real-mode"
         let temp_home =
             std::env::temp_dir().join(format!("zeroclaw_test_home_{}", uuid::Uuid::new_v4()));
         let workspace_dir = temp_home.join("workspace");
-        let legacy_config_path = temp_home.join(".zeroclaw").join("config.toml");
+        let legacy_config_path = temp_home.join(".labaclaw").join("config.toml");
 
         let original_home = std::env::var("HOME").ok();
         std::env::set_var("HOME", &temp_home);
-        std::env::set_var("ZEROCLAW_WORKSPACE", &workspace_dir);
+        std::env::set_var("LABACLAW_WORKSPACE", &workspace_dir);
 
         let config = Config::load_or_init().await.unwrap();
 
@@ -13499,7 +13487,7 @@ provider_api = "not-a-real-mode"
         assert_eq!(config.config_path, legacy_config_path);
         assert!(config.config_path.exists());
 
-        std::env::remove_var("ZEROCLAW_WORKSPACE");
+        std::env::remove_var("LABACLAW_WORKSPACE");
         if let Some(home) = original_home {
             std::env::set_var("HOME", home);
         } else {
@@ -13514,7 +13502,7 @@ provider_api = "not-a-real-mode"
         let temp_home =
             std::env::temp_dir().join(format!("zeroclaw_test_home_{}", uuid::Uuid::new_v4()));
         let workspace_dir = temp_home.join("custom-workspace");
-        let legacy_config_dir = temp_home.join(".zeroclaw");
+        let legacy_config_dir = temp_home.join(".labaclaw");
         let legacy_config_path = legacy_config_dir.join("config.toml");
 
         fs::create_dir_all(&legacy_config_dir).await.unwrap();
@@ -13529,7 +13517,7 @@ default_model = "legacy-model"
 
         let original_home = std::env::var("HOME").ok();
         std::env::set_var("HOME", &temp_home);
-        std::env::set_var("ZEROCLAW_WORKSPACE", &workspace_dir);
+        std::env::set_var("LABACLAW_WORKSPACE", &workspace_dir);
 
         let config = Config::load_or_init().await.unwrap();
 
@@ -13537,7 +13525,7 @@ default_model = "legacy-model"
         assert_eq!(config.config_path, legacy_config_path);
         assert_eq!(config.default_model.as_deref(), Some("legacy-model"));
 
-        std::env::remove_var("ZEROCLAW_WORKSPACE");
+        std::env::remove_var("LABACLAW_WORKSPACE");
         if let Some(home) = original_home {
             std::env::set_var("HOME", home);
         } else {
@@ -13563,7 +13551,7 @@ default_model = "legacy-model"
 
         let original_home = std::env::var("HOME").ok();
         std::env::set_var("HOME", &temp_home);
-        std::env::remove_var("ZEROCLAW_WORKSPACE");
+        std::env::remove_var("LABACLAW_WORKSPACE");
 
         persist_active_workspace_config_dir(&custom_config_dir)
             .await
@@ -13604,14 +13592,14 @@ default_model = "legacy-model"
         persist_active_workspace_config_dir(&marker_config_dir)
             .await
             .unwrap();
-        std::env::set_var("ZEROCLAW_WORKSPACE", &env_workspace_dir);
+        std::env::set_var("LABACLAW_WORKSPACE", &env_workspace_dir);
 
         let config = Config::load_or_init().await.unwrap();
 
         assert_eq!(config.workspace_dir, env_workspace_dir.join("workspace"));
         assert_eq!(config.config_path, env_workspace_dir.join("config.toml"));
 
-        std::env::remove_var("ZEROCLAW_WORKSPACE");
+        std::env::remove_var("LABACLAW_WORKSPACE");
         if let Some(home) = original_home {
             std::env::set_var("HOME", home);
         } else {
@@ -13625,7 +13613,7 @@ default_model = "legacy-model"
         let _env_guard = env_override_lock().await;
         let temp_home =
             std::env::temp_dir().join(format!("zeroclaw_test_home_{}", uuid::Uuid::new_v4()));
-        let default_config_dir = temp_home.join(".zeroclaw");
+        let default_config_dir = temp_home.join(".labaclaw");
         let custom_config_dir = temp_home.join("profiles").join("custom-profile");
         let default_marker_path = default_config_dir.join(ACTIVE_WORKSPACE_STATE_FILE);
         let custom_marker_path = custom_config_dir.join(ACTIVE_WORKSPACE_STATE_FILE);
@@ -13661,7 +13649,7 @@ default_model = "legacy-model"
         let _env_guard = env_override_lock().await;
         let temp_home =
             std::env::temp_dir().join(format!("zeroclaw_test_home_{}", uuid::Uuid::new_v4()));
-        let default_config_root_blocker = temp_home.join(".zeroclaw");
+        let default_config_root_blocker = temp_home.join(".labaclaw");
         let custom_config_dir = temp_home.join("profiles").join("restricted-home-profile");
         let custom_marker_path = custom_config_dir.join(ACTIVE_WORKSPACE_STATE_FILE);
 
@@ -13693,7 +13681,7 @@ default_model = "legacy-model"
         let _env_guard = env_override_lock().await;
         let temp_home =
             std::env::temp_dir().join(format!("zeroclaw_test_home_{}", uuid::Uuid::new_v4()));
-        let default_config_dir = temp_home.join(".zeroclaw");
+        let default_config_dir = temp_home.join(".labaclaw");
         let custom_config_dir = temp_home.join("profiles").join("custom-profile");
         let marker_path = default_config_dir.join(ACTIVE_WORKSPACE_STATE_FILE);
         let custom_marker_path = custom_config_dir.join(ACTIVE_WORKSPACE_STATE_FILE);
@@ -13727,11 +13715,11 @@ default_model = "legacy-model"
         let mut config = Config::default();
         let original_provider = config.default_provider.clone();
 
-        std::env::set_var("ZEROCLAW_PROVIDER", "");
+        std::env::set_var("LABACLAW_PROVIDER", "");
         config.apply_env_overrides();
         assert_eq!(config.default_provider, original_provider);
 
-        std::env::remove_var("ZEROCLAW_PROVIDER");
+        std::env::remove_var("LABACLAW_PROVIDER");
     }
 
     #[test]
@@ -13740,11 +13728,11 @@ default_model = "legacy-model"
         let mut config = Config::default();
         assert_eq!(config.gateway.port, 42617);
 
-        std::env::set_var("ZEROCLAW_GATEWAY_PORT", "8080");
+        std::env::set_var("LABACLAW_GATEWAY_PORT", "8080");
         config.apply_env_overrides();
         assert_eq!(config.gateway.port, 8080);
 
-        std::env::remove_var("ZEROCLAW_GATEWAY_PORT");
+        std::env::remove_var("LABACLAW_GATEWAY_PORT");
     }
 
     #[test]
@@ -13752,7 +13740,7 @@ default_model = "legacy-model"
         let _env_guard = env_override_lock().await;
         let mut config = Config::default();
 
-        std::env::remove_var("ZEROCLAW_GATEWAY_PORT");
+        std::env::remove_var("LABACLAW_GATEWAY_PORT");
         std::env::set_var("PORT", "9000");
         config.apply_env_overrides();
         assert_eq!(config.gateway.port, 9000);
@@ -13766,11 +13754,11 @@ default_model = "legacy-model"
         let mut config = Config::default();
         assert_eq!(config.gateway.host, "127.0.0.1");
 
-        std::env::set_var("ZEROCLAW_GATEWAY_HOST", "0.0.0.0");
+        std::env::set_var("LABACLAW_GATEWAY_HOST", "0.0.0.0");
         config.apply_env_overrides();
         assert_eq!(config.gateway.host, "0.0.0.0");
 
-        std::env::remove_var("ZEROCLAW_GATEWAY_HOST");
+        std::env::remove_var("LABACLAW_GATEWAY_HOST");
     }
 
     #[test]
@@ -13778,7 +13766,7 @@ default_model = "legacy-model"
         let _env_guard = env_override_lock().await;
         let mut config = Config::default();
 
-        std::env::remove_var("ZEROCLAW_GATEWAY_HOST");
+        std::env::remove_var("LABACLAW_GATEWAY_HOST");
         std::env::set_var("HOST", "0.0.0.0");
         config.apply_env_overrides();
         assert_eq!(config.gateway.host, "0.0.0.0");
@@ -13791,31 +13779,31 @@ default_model = "legacy-model"
         let _env_guard = env_override_lock().await;
         let mut config = Config::default();
 
-        std::env::set_var("ZEROCLAW_TEMPERATURE", "0.5");
+        std::env::set_var("LABACLAW_TEMPERATURE", "0.5");
         config.apply_env_overrides();
         assert!((config.default_temperature - 0.5).abs() < f64::EPSILON);
 
-        std::env::remove_var("ZEROCLAW_TEMPERATURE");
+        std::env::remove_var("LABACLAW_TEMPERATURE");
     }
 
     #[test]
     async fn env_override_temperature_out_of_range_ignored() {
         let _env_guard = env_override_lock().await;
         // Clean up any leftover env vars from other tests
-        std::env::remove_var("ZEROCLAW_TEMPERATURE");
+        std::env::remove_var("LABACLAW_TEMPERATURE");
 
         let mut config = Config::default();
         let original_temp = config.default_temperature;
 
         // Temperature > 2.0 should be ignored
-        std::env::set_var("ZEROCLAW_TEMPERATURE", "3.0");
+        std::env::set_var("LABACLAW_TEMPERATURE", "3.0");
         config.apply_env_overrides();
         assert!(
             (config.default_temperature - original_temp).abs() < f64::EPSILON,
             "Temperature 3.0 should be ignored (out of range)"
         );
 
-        std::env::remove_var("ZEROCLAW_TEMPERATURE");
+        std::env::remove_var("LABACLAW_TEMPERATURE");
     }
 
     #[test]
@@ -13824,15 +13812,15 @@ default_model = "legacy-model"
         let mut config = Config::default();
         assert_eq!(config.runtime.reasoning_enabled, None);
 
-        std::env::set_var("ZEROCLAW_REASONING_ENABLED", "false");
+        std::env::set_var("LABACLAW_REASONING_ENABLED", "false");
         config.apply_env_overrides();
         assert_eq!(config.runtime.reasoning_enabled, Some(false));
 
-        std::env::set_var("ZEROCLAW_REASONING_ENABLED", "true");
+        std::env::set_var("LABACLAW_REASONING_ENABLED", "true");
         config.apply_env_overrides();
         assert_eq!(config.runtime.reasoning_enabled, Some(true));
 
-        std::env::remove_var("ZEROCLAW_REASONING_ENABLED");
+        std::env::remove_var("LABACLAW_REASONING_ENABLED");
     }
 
     #[test]
@@ -13841,11 +13829,11 @@ default_model = "legacy-model"
         let mut config = Config::default();
         config.runtime.reasoning_enabled = Some(false);
 
-        std::env::set_var("ZEROCLAW_REASONING_ENABLED", "maybe");
+        std::env::set_var("LABACLAW_REASONING_ENABLED", "maybe");
         config.apply_env_overrides();
         assert_eq!(config.runtime.reasoning_enabled, Some(false));
 
-        std::env::remove_var("ZEROCLAW_REASONING_ENABLED");
+        std::env::remove_var("LABACLAW_REASONING_ENABLED");
     }
 
     #[test]
@@ -13854,7 +13842,7 @@ default_model = "legacy-model"
         let mut config = Config::default();
         assert_eq!(config.runtime.reasoning_level, None);
 
-        std::env::set_var("ZEROCLAW_REASONING_LEVEL", "xhigh");
+        std::env::set_var("LABACLAW_REASONING_LEVEL", "xhigh");
         config.apply_env_overrides();
         assert_eq!(config.runtime.reasoning_level.as_deref(), Some("xhigh"));
         assert_eq!(
@@ -13862,7 +13850,7 @@ default_model = "legacy-model"
             Some("xhigh")
         );
 
-        std::env::remove_var("ZEROCLAW_REASONING_LEVEL");
+        std::env::remove_var("LABACLAW_REASONING_LEVEL");
     }
 
     #[test]
@@ -13871,11 +13859,11 @@ default_model = "legacy-model"
         let mut config = Config::default();
         config.runtime.reasoning_level = Some("medium".to_string());
 
-        std::env::set_var("ZEROCLAW_REASONING_LEVEL", "invalid");
+        std::env::set_var("LABACLAW_REASONING_LEVEL", "invalid");
         config.apply_env_overrides();
         assert_eq!(config.runtime.reasoning_level.as_deref(), Some("medium"));
 
-        std::env::remove_var("ZEROCLAW_REASONING_LEVEL");
+        std::env::remove_var("LABACLAW_REASONING_LEVEL");
     }
 
     #[test]
@@ -13884,11 +13872,11 @@ default_model = "legacy-model"
         let mut config = Config::default();
 
         std::env::remove_var("PROVIDER_TRANSPORT");
-        std::env::set_var("ZEROCLAW_PROVIDER_TRANSPORT", "WS");
+        std::env::set_var("LABACLAW_PROVIDER_TRANSPORT", "WS");
         config.apply_env_overrides();
         assert_eq!(config.provider.transport.as_deref(), Some("websocket"));
 
-        std::env::remove_var("ZEROCLAW_PROVIDER_TRANSPORT");
+        std::env::remove_var("LABACLAW_PROVIDER_TRANSPORT");
     }
 
     #[test]
@@ -13896,7 +13884,7 @@ default_model = "legacy-model"
         let _env_guard = env_override_lock().await;
         let mut config = Config::default();
 
-        std::env::remove_var("ZEROCLAW_PROVIDER_TRANSPORT");
+        std::env::remove_var("LABACLAW_PROVIDER_TRANSPORT");
         std::env::set_var("PROVIDER_TRANSPORT", "HTTP");
         config.apply_env_overrides();
         assert_eq!(config.provider.transport.as_deref(), Some("sse"));
@@ -13911,11 +13899,11 @@ default_model = "legacy-model"
         config.provider.transport = Some("sse".to_string());
 
         std::env::remove_var("PROVIDER_TRANSPORT");
-        std::env::set_var("ZEROCLAW_PROVIDER_TRANSPORT", "udp");
+        std::env::set_var("LABACLAW_PROVIDER_TRANSPORT", "udp");
         config.apply_env_overrides();
         assert_eq!(config.provider.transport.as_deref(), Some("sse"));
 
-        std::env::remove_var("ZEROCLAW_PROVIDER_TRANSPORT");
+        std::env::remove_var("LABACLAW_PROVIDER_TRANSPORT");
     }
 
     #[test]
@@ -13924,7 +13912,7 @@ default_model = "legacy-model"
         let mut config = Config::default();
         config.provider.transport = Some("auto".to_string());
 
-        std::env::remove_var("ZEROCLAW_PROVIDER_TRANSPORT");
+        std::env::remove_var("LABACLAW_PROVIDER_TRANSPORT");
         std::env::set_var("PROVIDER_TRANSPORT", "udp");
         config.apply_env_overrides();
         assert_eq!(config.provider.transport.as_deref(), Some("auto"));
@@ -13938,20 +13926,20 @@ default_model = "legacy-model"
         let mut config = Config::default();
         assert_eq!(config.model_support_vision, None);
 
-        std::env::set_var("ZEROCLAW_MODEL_SUPPORT_VISION", "true");
+        std::env::set_var("LABACLAW_MODEL_SUPPORT_VISION", "true");
         config.apply_env_overrides();
         assert_eq!(config.model_support_vision, Some(true));
 
-        std::env::set_var("ZEROCLAW_MODEL_SUPPORT_VISION", "false");
+        std::env::set_var("LABACLAW_MODEL_SUPPORT_VISION", "false");
         config.apply_env_overrides();
         assert_eq!(config.model_support_vision, Some(false));
 
-        std::env::set_var("ZEROCLAW_MODEL_SUPPORT_VISION", "maybe");
+        std::env::set_var("LABACLAW_MODEL_SUPPORT_VISION", "maybe");
         config.model_support_vision = Some(true);
         config.apply_env_overrides();
         assert_eq!(config.model_support_vision, Some(true));
 
-        std::env::remove_var("ZEROCLAW_MODEL_SUPPORT_VISION");
+        std::env::remove_var("LABACLAW_MODEL_SUPPORT_VISION");
     }
 
     #[test]
@@ -14124,9 +14112,9 @@ default_model = "legacy-model"
         let _env_guard = env_override_lock().await;
         let mut config = Config::default();
 
-        std::env::set_var("ZEROCLAW_STORAGE_PROVIDER", "postgres");
-        std::env::set_var("ZEROCLAW_STORAGE_DB_URL", "postgres://example/db");
-        std::env::set_var("ZEROCLAW_STORAGE_CONNECT_TIMEOUT_SECS", "15");
+        std::env::set_var("LABACLAW_STORAGE_PROVIDER", "postgres");
+        std::env::set_var("LABACLAW_STORAGE_DB_URL", "postgres://example/db");
+        std::env::set_var("LABACLAW_STORAGE_CONNECT_TIMEOUT_SECS", "15");
 
         config.apply_env_overrides();
 
@@ -14140,9 +14128,9 @@ default_model = "legacy-model"
             Some(15)
         );
 
-        std::env::remove_var("ZEROCLAW_STORAGE_PROVIDER");
-        std::env::remove_var("ZEROCLAW_STORAGE_DB_URL");
-        std::env::remove_var("ZEROCLAW_STORAGE_CONNECT_TIMEOUT_SECS");
+        std::env::remove_var("LABACLAW_STORAGE_PROVIDER");
+        std::env::remove_var("LABACLAW_STORAGE_DB_URL");
+        std::env::remove_var("LABACLAW_STORAGE_CONNECT_TIMEOUT_SECS");
     }
 
     #[test]
@@ -14167,13 +14155,13 @@ default_model = "legacy-model"
         clear_proxy_env_test_vars();
 
         let mut config = Config::default();
-        std::env::set_var("ZEROCLAW_PROXY_ENABLED", "true");
-        std::env::set_var("ZEROCLAW_HTTP_PROXY", "http://127.0.0.1:7890");
+        std::env::set_var("LABACLAW_PROXY_ENABLED", "true");
+        std::env::set_var("LABACLAW_HTTP_PROXY", "http://127.0.0.1:7890");
         std::env::set_var(
-            "ZEROCLAW_PROXY_SERVICES",
+            "LABACLAW_PROXY_SERVICES",
             "provider.openai, tool.http_request",
         );
-        std::env::set_var("ZEROCLAW_PROXY_SCOPE", "services");
+        std::env::set_var("LABACLAW_PROXY_SCOPE", "services");
 
         config.apply_env_overrides();
 
@@ -14196,11 +14184,11 @@ default_model = "legacy-model"
         clear_proxy_env_test_vars();
 
         let mut config = Config::default();
-        std::env::set_var("ZEROCLAW_PROXY_ENABLED", "true");
-        std::env::set_var("ZEROCLAW_PROXY_SCOPE", "environment");
-        std::env::set_var("ZEROCLAW_HTTP_PROXY", "http://127.0.0.1:7890");
-        std::env::set_var("ZEROCLAW_HTTPS_PROXY", "http://127.0.0.1:7891");
-        std::env::set_var("ZEROCLAW_NO_PROXY", "localhost,127.0.0.1");
+        std::env::set_var("LABACLAW_PROXY_ENABLED", "true");
+        std::env::set_var("LABACLAW_PROXY_SCOPE", "environment");
+        std::env::set_var("LABACLAW_HTTP_PROXY", "http://127.0.0.1:7890");
+        std::env::set_var("LABACLAW_HTTPS_PROXY", "http://127.0.0.1:7891");
+        std::env::set_var("LABACLAW_NO_PROXY", "localhost,127.0.0.1");
 
         config.apply_env_overrides();
 
@@ -14876,7 +14864,7 @@ gated_domain_categories = ["banking"]
 
 [security.estop]
 enabled = true
-state_file = "~/.zeroclaw/estop-state.json"
+state_file = "~/.labaclaw/estop-state.json"
 require_otp_to_resume = true
 
 [security.syscall_anomaly]

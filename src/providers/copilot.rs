@@ -176,7 +176,7 @@ pub struct CopilotProvider {
 
 impl CopilotProvider {
     pub fn new(github_token: Option<&str>) -> Self {
-        let token_dir = directories::ProjectDirs::from("", "", "zeroclaw")
+        let token_dir = directories::ProjectDirs::from("", "", "labaclaw")
             .map(|dir| dir.config_dir().join("copilot"))
             .unwrap_or_else(|| {
                 // Fall back to a user-specific temp directory to avoid
@@ -184,7 +184,7 @@ impl CopilotProvider {
                 let user = std::env::var("USER")
                     .or_else(|_| std::env::var("USERNAME"))
                     .unwrap_or_else(|_| "unknown".to_string());
-                std::env::temp_dir().join(format!("zeroclaw-copilot-{user}"))
+                std::env::temp_dir().join(format!("labaclaw-copilot-{user}"))
             });
 
         if let Err(err) = std::fs::create_dir_all(&token_dir) {

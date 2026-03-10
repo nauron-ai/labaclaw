@@ -92,7 +92,7 @@ impl OpenAiCodexProvider {
         } else {
             Some(oauth_access_token.ok_or_else(|| {
                 anyhow::anyhow!(
-                    "OpenAI Codex auth profile not found. Run `zeroclaw auth login --provider openai-codex`."
+                    "OpenAI Codex auth profile not found. Run `labaclaw auth login --provider openai-codex`."
                 )
             })?)
         };
@@ -101,7 +101,7 @@ impl OpenAiCodexProvider {
         } else {
             Some(account_id.ok_or_else(|| {
                 anyhow::anyhow!(
-                    "OpenAI Codex account id not found in auth profile/token. Run `zeroclaw auth login --provider openai-codex` again."
+                    "OpenAI Codex account id not found in auth profile/token. Run `labaclaw auth login --provider openai-codex` again."
                 )
             })?)
         };

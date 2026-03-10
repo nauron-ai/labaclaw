@@ -1,6 +1,6 @@
 //! Persistent mock dashboard backend for end-to-end UI testing.
 //!
-//! Enabled per-request via `X-ZeroClaw-Mock: 1`.
+//! Enabled per-request via `X-LabaClaw-Mock: 1`.
 
 use anyhow::{Context, Result};
 use axum::{
@@ -304,7 +304,7 @@ max_tool_iterations = 24
                     id: "mem-1".to_string(),
                     key: "ops.runbook.gateway".to_string(),
                     content:
-                        "Restart gateway with `zeroclaw gateway --open-dashboard` after updates."
+                        "Restart gateway with `labaclaw gateway --open-dashboard` after updates."
                             .to_string(),
                     category: "operations".to_string(),
                     timestamp: two_hours_ago,
@@ -357,7 +357,7 @@ max_tool_iterations = 24
 
 impl DashboardMockStore {
     fn open_default() -> Result<Self> {
-        let path = std::env::var("ZEROCLAW_DASHBOARD_MOCK_DB")
+        let path = std::env::var("LABACLAW_DASHBOARD_MOCK_DB")
             .map(PathBuf::from)
             .unwrap_or_else(|_| default_db_path());
         Self::open(&path)

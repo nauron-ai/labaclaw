@@ -172,8 +172,8 @@ impl RuntimeAdapter for NativeRuntime {
 
     fn storage_path(&self) -> PathBuf {
         directories::UserDirs::new().map_or_else(
-            || PathBuf::from(".zeroclaw"),
-            |u| u.home_dir().join(".zeroclaw"),
+            || PathBuf::from(".labaclaw"),
+            |u| u.home_dir().join(".labaclaw"),
         )
     }
 

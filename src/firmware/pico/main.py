@@ -1,4 +1,4 @@
-# ZeroClaw Pico firmware — serial JSON protocol handler
+# LabaClaw Pico firmware — serial JSON protocol handler
 # MicroPython — Raspberry Pi Pico (RP2040)
 #
 # Wire protocol:

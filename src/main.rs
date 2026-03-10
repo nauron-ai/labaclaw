@@ -77,7 +77,7 @@ use tracing::{info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
 
 const PROFILE_MISMATCH_PREFIX: &str = "Pending login profile mismatch:";
-const ZEROCLAW_BUILD_VERSION: &str = env!("ZEROCLAW_BUILD_VERSION");
+const LABACLAW_BUILD_VERSION: &str = env!("LABACLAW_BUILD_VERSION");
 
 #[derive(Debug, Clone, ValueEnum)]
 enum QuotaFormat {
@@ -218,7 +218,7 @@ enum EstopLevelArg {
 #[derive(Parser, Debug)]
 #[command(name = "labaclaw")]
 #[command(author = "theonlyhennygod")]
-#[command(version = ZEROCLAW_BUILD_VERSION)]
+#[command(version = LABACLAW_BUILD_VERSION)]
 #[command(about = "The fastest, smallest AI assistant.", long_about = None)]
 struct Cli {
     #[arg(long, global = true)]
@@ -931,7 +931,7 @@ async fn main() -> Result<()> {
         if config_dir.trim().is_empty() {
             bail!("--config-dir cannot be empty");
         }
-        std::env::set_var("ZEROCLAW_CONFIG_DIR", config_dir);
+        std::env::set_var("LABACLAW_CONFIG_DIR", config_dir);
     }
 
     // Completions must remain stdout-only and should not load config or initialize logging.
@@ -1063,7 +1063,7 @@ async fn main() -> Result<()> {
             .await
         }?;
         // Auto-start channels if user said yes during wizard
-        if std::env::var("ZEROCLAW_AUTOSTART_CHANNELS").as_deref() == Ok("1") {
+        if std::env::var("LABACLAW_AUTOSTART_CHANNELS").as_deref() == Ok("1") {
             Box::pin(channels::start_channels(config)).await?;
         }
         return Ok(());
@@ -1196,7 +1196,7 @@ async fn main() -> Result<()> {
         Commands::Status => {
             println!("🦀 LabaClaw Status");
             println!();
-            println!("Version:     {}", ZEROCLAW_BUILD_VERSION);
+            println!("Version:     {}", LABACLAW_BUILD_VERSION);
             println!("Workspace:   {}", config.workspace_dir.display());
             println!("Config:      {}", config.config_path.display());
             println!();

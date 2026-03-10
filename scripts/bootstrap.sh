@@ -67,7 +67,7 @@ Examples:
   # Remote one-liner
   curl -fsSL https://raw.githubusercontent.com/nauron-ai/labaclaw/main/install.sh | bash
 
-Environment variables (preferred; legacy ZEROCLAW_* aliases are still accepted):
+Environment variables (preferred LABACLAW_* interface only):
   LABACLAW_CONTAINER_CLI     Container CLI command (default: docker; auto-fallback: podman)
   LABACLAW_DOCKER_DATA_DIR   Host path for Docker config/workspace persistence (default: ~/.labaclaw-docker)
   LABACLAW_DOCKER_IMAGE      Docker image tag to build/run (default: labaclaw-bootstrap:local)
@@ -104,17 +104,13 @@ have_cmd() {
   command -v "$1" >/dev/null 2>&1
 }
 
-compat_env() {
+env_or_default() {
   local primary="$1"
-  local legacy="${2:-}"
+  local _unused="${2:-}"
   local default="${3:-}"
 
   if [[ -n "${!primary:-}" ]]; then
     printf '%s' "${!primary}"
-    return 0
-  fi
-  if [[ -n "$legacy" && -n "${!legacy:-}" ]]; then
-    printf '%s' "${!legacy}"
     return 0
   fi
 
@@ -183,8 +179,8 @@ should_attempt_prebuilt_for_resources() {
   local workspace="${1:-.}"
   local min_ram_mb min_disk_mb total_ram_mb free_disk_mb low_resource
 
-  min_ram_mb="$(compat_env LABACLAW_BOOTSTRAP_MIN_RAM_MB ZEROCLAW_BOOTSTRAP_MIN_RAM_MB 2048)"
-  min_disk_mb="$(compat_env LABACLAW_BOOTSTRAP_MIN_DISK_MB ZEROCLAW_BOOTSTRAP_MIN_DISK_MB 6144)"
+  min_ram_mb="$(env_or_default LABACLAW_BOOTSTRAP_MIN_RAM_MB LABACLAW_BOOTSTRAP_MIN_RAM_MB 2048)"
+  min_disk_mb="$(env_or_default LABACLAW_BOOTSTRAP_MIN_DISK_MB LABACLAW_BOOTSTRAP_MIN_DISK_MB 6144)"
   total_ram_mb="$(get_total_memory_mb || true)"
   free_disk_mb="$(get_available_disk_mb "$workspace" || true)"
   low_resource=false
@@ -374,7 +370,7 @@ run_pacman() {
 
   local pacman_cfg_tmp=""
   local pacman_rc=0
-  pacman_cfg_tmp="$(mktemp /tmp/zeroclaw-pacman.XXXXXX.conf)"
+  pacman_cfg_tmp="$(mktemp /tmp/labaclaw-pacman.XXXXXX.conf)"
   cp /etc/pacman.conf "$pacman_cfg_tmp"
   if ! grep -Eq '^[[:space:]]*DisableSandboxSyscalls([[:space:]]|$)' "$pacman_cfg_tmp"; then
     printf '\nDisableSandboxSyscalls\n' >> "$pacman_cfg_tmp"
@@ -732,7 +728,7 @@ run_guided_installer() {
 
 resolve_container_cli() {
   local requested_cli
-  requested_cli="$(compat_env LABACLAW_CONTAINER_CLI ZEROCLAW_CONTAINER_CLI docker)"
+  requested_cli="$(env_or_default LABACLAW_CONTAINER_CLI LABACLAW_CONTAINER_CLI docker)"
 
   if have_cmd "$requested_cli"; then
     CONTAINER_CLI="$requested_cli"
@@ -764,7 +760,7 @@ ensure_docker_ready() {
   fi
 }
 
-is_zeroclaw_container() {
+is_labaclaw_container() {
   local name="$1"
   local image="$2"
   local command="$3"
@@ -774,17 +770,17 @@ is_zeroclaw_container() {
   image_lc="$(printf '%s' "$image" | tr '[:upper:]' '[:lower:]')"
   command_lc="$(printf '%s' "$command" | tr '[:upper:]' '[:lower:]')"
 
-  [[ "$name_lc" == *"zeroclaw"* || "$image_lc" == *"zeroclaw"* || "$command_lc" == *"zeroclaw"* ]]
+  [[ "$name_lc" == *"labaclaw"* || "$image_lc" == *"labaclaw"* || "$command_lc" == *"labaclaw"* ]]
 }
 
-is_zeroclaw_resource_name() {
+is_labaclaw_resource_name() {
   local name="$1"
   local name_lc
   name_lc="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
-  [[ "$name_lc" == *"zeroclaw"* ]]
+  [[ "$name_lc" == *"labaclaw"* ]]
 }
 
-maybe_stop_running_zeroclaw_containers() {
+maybe_stop_running_labaclaw_containers() {
   local -a running_ids=() running_rows=()
   local id name image command row
 
@@ -792,7 +788,7 @@ maybe_stop_running_zeroclaw_containers() {
     if [[ -z "$id" ]]; then
       continue
     fi
-    if is_zeroclaw_container "$name" "$image" "$command"; then
+    if is_labaclaw_container "$name" "$image" "$command"; then
       running_ids+=("$id")
       running_rows+=("$id"$'\t'"$name"$'\t'"$image"$'\t'"$command")
     fi
@@ -821,7 +817,7 @@ maybe_stop_running_zeroclaw_containers() {
   fi
 }
 
-reset_docker_zeroclaw_resources() {
+reset_docker_labaclaw_resources() {
   local docker_data_dir="$1"
   local -a container_ids container_rows network_names volume_names
   local id name image command row resource_name
@@ -837,7 +833,7 @@ reset_docker_zeroclaw_resources() {
     if [[ -z "$id" ]]; then
       continue
     fi
-    if is_zeroclaw_container "$name" "$image" "$command"; then
+    if is_labaclaw_container "$name" "$image" "$command"; then
       container_ids+=("$id")
       container_rows+=("$id"$'\t'"$name"$'\t'"$image"$'\t'"$command")
     fi
@@ -858,7 +854,7 @@ reset_docker_zeroclaw_resources() {
     if [[ -z "$resource_name" ]]; then
       continue
     fi
-    if is_zeroclaw_resource_name "$resource_name"; then
+    if is_labaclaw_resource_name "$resource_name"; then
       network_names+=("$resource_name")
     fi
   done < <("$CONTAINER_CLI" network ls --format '{{.Name}}')
@@ -879,7 +875,7 @@ reset_docker_zeroclaw_resources() {
     if [[ -z "$resource_name" ]]; then
       continue
     fi
-    if is_zeroclaw_resource_name "$resource_name"; then
+    if is_labaclaw_resource_name "$resource_name"; then
       volume_names+=("$resource_name")
     fi
   done < <("$CONTAINER_CLI" volume ls --format '{{.Name}}')
@@ -1067,18 +1063,18 @@ run_docker_bootstrap() {
   local config_gateway_port_value
   local -a container_run_user_args container_run_namespace_args
   local -a container_extra_run_args container_extra_env_args docker_build_args daemon_cmd
-  docker_image="$(compat_env LABACLAW_DOCKER_IMAGE ZEROCLAW_DOCKER_IMAGE labaclaw-bootstrap:local)"
+  docker_image="$(env_or_default LABACLAW_DOCKER_IMAGE LABACLAW_DOCKER_IMAGE labaclaw-bootstrap:local)"
   fallback_image="ghcr.io/nauron-ai/labaclaw:latest"
-  docker_build_features="$(compat_env LABACLAW_DOCKER_CARGO_FEATURES ZEROCLAW_DOCKER_CARGO_FEATURES "")"
-  docker_browser_runtime_mode="$(compat_env LABACLAW_DOCKER_BROWSER_RUNTIME ZEROCLAW_DOCKER_BROWSER_RUNTIME auto)"
-  docker_browser_sidecar_name="$(compat_env LABACLAW_DOCKER_BROWSER_SIDECAR_NAME ZEROCLAW_DOCKER_BROWSER_SIDECAR_NAME labaclaw-browser-webdriver)"
-  docker_browser_sidecar_image="$(compat_env LABACLAW_DOCKER_BROWSER_SIDECAR_IMAGE ZEROCLAW_DOCKER_BROWSER_SIDECAR_IMAGE selenium/standalone-chromium:latest)"
-  docker_network="$(compat_env LABACLAW_DOCKER_NETWORK ZEROCLAW_DOCKER_NETWORK labaclaw-bootstrap-net)"
-  docker_daemon_name="$(compat_env LABACLAW_DOCKER_DAEMON_NAME ZEROCLAW_DOCKER_DAEMON_NAME labaclaw-daemon)"
-  docker_daemon_bind_host="$(compat_env LABACLAW_DOCKER_DAEMON_BIND_HOST ZEROCLAW_DOCKER_DAEMON_BIND_HOST 127.0.0.1)"
-  docker_daemon_host_port="$(compat_env LABACLAW_DOCKER_DAEMON_HOST_PORT ZEROCLAW_DOCKER_DAEMON_HOST_PORT "")"
+  docker_build_features="$(env_or_default LABACLAW_DOCKER_CARGO_FEATURES LABACLAW_DOCKER_CARGO_FEATURES "")"
+  docker_browser_runtime_mode="$(env_or_default LABACLAW_DOCKER_BROWSER_RUNTIME LABACLAW_DOCKER_BROWSER_RUNTIME auto)"
+  docker_browser_sidecar_name="$(env_or_default LABACLAW_DOCKER_BROWSER_SIDECAR_NAME LABACLAW_DOCKER_BROWSER_SIDECAR_NAME labaclaw-browser-webdriver)"
+  docker_browser_sidecar_image="$(env_or_default LABACLAW_DOCKER_BROWSER_SIDECAR_IMAGE LABACLAW_DOCKER_BROWSER_SIDECAR_IMAGE selenium/standalone-chromium:latest)"
+  docker_network="$(env_or_default LABACLAW_DOCKER_NETWORK LABACLAW_DOCKER_NETWORK labaclaw-bootstrap-net)"
+  docker_daemon_name="$(env_or_default LABACLAW_DOCKER_DAEMON_NAME LABACLAW_DOCKER_DAEMON_NAME labaclaw-daemon)"
+  docker_daemon_bind_host="$(env_or_default LABACLAW_DOCKER_DAEMON_BIND_HOST LABACLAW_DOCKER_DAEMON_BIND_HOST 127.0.0.1)"
+  docker_daemon_host_port="$(env_or_default LABACLAW_DOCKER_DAEMON_HOST_PORT LABACLAW_DOCKER_DAEMON_HOST_PORT "")"
   seed_config_path="${DOCKER_CONFIG_FILE:-}"
-  seed_secret_key_path="${DOCKER_SECRET_KEY_FILE:-$(compat_env LABACLAW_DOCKER_SECRET_KEY_FILE ZEROCLAW_DOCKER_SECRET_KEY_FILE "")}"
+  seed_secret_key_path="${DOCKER_SECRET_KEY_FILE:-$(env_or_default LABACLAW_DOCKER_SECRET_KEY_FILE LABACLAW_DOCKER_SECRET_KEY_FILE "")}"
   container_network_name=""
   docker_browser_webdriver_url=""
   if [[ "$TEMP_CLONE" == true ]]; then
@@ -1086,11 +1082,11 @@ run_docker_bootstrap() {
   else
     default_data_dir="$WORK_DIR/.labaclaw-docker"
   fi
-  docker_data_dir="$(compat_env LABACLAW_DOCKER_DATA_DIR ZEROCLAW_DOCKER_DATA_DIR "$default_data_dir")"
+  docker_data_dir="$(env_or_default LABACLAW_DOCKER_DATA_DIR LABACLAW_DOCKER_DATA_DIR "$default_data_dir")"
   DOCKER_DATA_DIR="$docker_data_dir"
 
   if [[ "$DOCKER_RESET" == true ]]; then
-    reset_docker_zeroclaw_resources "$docker_data_dir"
+    reset_docker_labaclaw_resources "$docker_data_dir"
   fi
 
   mkdir -p "$docker_data_dir/.labaclaw" "$docker_data_dir/workspace"
@@ -1109,7 +1105,7 @@ run_docker_bootstrap() {
     warn "--skip-install has no effect with --docker."
   fi
 
-  maybe_stop_running_zeroclaw_containers
+  maybe_stop_running_labaclaw_containers
 
   docker_browser_runtime_bool="false"
   case "$(printf '%s' "$docker_browser_runtime_mode" | tr '[:upper:]' '[:lower:]')" in
@@ -1164,7 +1160,7 @@ run_docker_bootstrap() {
     docker_build_args=(build --target release -t "$docker_image")
     if [[ -n "$docker_build_features" ]]; then
       info "Docker build features: $docker_build_features"
-      docker_build_args+=(--build-arg "ZEROCLAW_CARGO_FEATURES=$docker_build_features")
+      docker_build_args+=(--build-arg "LABACLAW_CARGO_FEATURES=$docker_build_features")
     fi
     docker_build_args+=("$WORK_DIR")
     "$CONTAINER_CLI" "${docker_build_args[@]}"
@@ -1203,7 +1199,7 @@ run_docker_bootstrap() {
     container_extra_run_args+=(--network "$container_network_name")
   fi
   if [[ -n "$docker_browser_webdriver_url" ]]; then
-    container_extra_env_args+=(-e "ZEROCLAW_DOCKER_WEBDRIVER_URL=$docker_browser_webdriver_url")
+    container_extra_env_args+=(-e "LABACLAW_DOCKER_WEBDRIVER_URL=$docker_browser_webdriver_url")
   fi
 
   info "Docker data directory: $docker_data_dir"
@@ -1236,9 +1232,9 @@ run_docker_bootstrap() {
     daemon_cmd+=(
       -p "${docker_daemon_bind_host}:${docker_daemon_host_port}:${docker_daemon_port}"
       -e HOME=/labaclaw-data
-      -e ZEROCLAW_CONFIG_DIR=/labaclaw-data/.labaclaw
-      -e ZEROCLAW_WORKSPACE=/labaclaw-data/workspace
-      -e ZEROCLAW_DOCKER_BOOTSTRAP=1
+      -e LABACLAW_CONFIG_DIR=/labaclaw-data/.labaclaw
+      -e LABACLAW_WORKSPACE=/labaclaw-data/workspace
+      -e LABACLAW_DOCKER_BOOTSTRAP=1
     )
     if [[ ${#container_extra_env_args[@]} -gt 0 ]]; then
       daemon_cmd+=("${container_extra_env_args[@]}")
@@ -1291,9 +1287,9 @@ MSG
         "${container_run_user_args[@]}" \
         "${container_extra_run_args[@]+${container_extra_run_args[@]}}" \
         -e HOME=/labaclaw-data \
-        -e ZEROCLAW_CONFIG_DIR=/labaclaw-data/.labaclaw \
-        -e ZEROCLAW_WORKSPACE=/labaclaw-data/workspace \
-        -e ZEROCLAW_DOCKER_BOOTSTRAP=1 \
+        -e LABACLAW_CONFIG_DIR=/labaclaw-data/.labaclaw \
+        -e LABACLAW_WORKSPACE=/labaclaw-data/workspace \
+        -e LABACLAW_DOCKER_BOOTSTRAP=1 \
         "${container_extra_env_args[@]+${container_extra_env_args[@]}}" \
         -v "$config_mount" \
         -v "$workspace_mount" \
@@ -1304,9 +1300,9 @@ MSG
         "${container_run_user_args[@]}" \
         "${container_extra_run_args[@]+${container_extra_run_args[@]}}" \
         -e HOME=/labaclaw-data \
-        -e ZEROCLAW_CONFIG_DIR=/labaclaw-data/.labaclaw \
-        -e ZEROCLAW_WORKSPACE=/labaclaw-data/workspace \
-        -e ZEROCLAW_DOCKER_BOOTSTRAP=1 \
+        -e LABACLAW_CONFIG_DIR=/labaclaw-data/.labaclaw \
+        -e LABACLAW_WORKSPACE=/labaclaw-data/workspace \
+        -e LABACLAW_DOCKER_BOOTSTRAP=1 \
         "${container_extra_env_args[@]+${container_extra_env_args[@]}}" \
         -v "$config_mount" \
         -v "$workspace_mount" \
@@ -1340,12 +1336,12 @@ INTERACTIVE_ONBOARD=false
 SKIP_BUILD=false
 SKIP_INSTALL=false
 PREBUILT_INSTALLED=false
-CONTAINER_CLI="$(compat_env LABACLAW_CONTAINER_CLI ZEROCLAW_CONTAINER_CLI docker)"
-API_KEY="$(compat_env LABACLAW_API_KEY ZEROCLAW_API_KEY "")"
-PROVIDER="$(compat_env LABACLAW_PROVIDER ZEROCLAW_PROVIDER openrouter)"
-MODEL="$(compat_env LABACLAW_MODEL ZEROCLAW_MODEL "")"
-LOCAL_CARGO_FEATURES="$(compat_env LABACLAW_CARGO_FEATURES ZEROCLAW_CARGO_FEATURES "")"
-LOCAL_CONFIG_PATH="$(compat_env LABACLAW_CONFIG_PATH ZEROCLAW_CONFIG_PATH "$HOME/.labaclaw/config.toml")"
+CONTAINER_CLI="$(env_or_default LABACLAW_CONTAINER_CLI LABACLAW_CONTAINER_CLI docker)"
+API_KEY="$(env_or_default LABACLAW_API_KEY LABACLAW_API_KEY "")"
+PROVIDER="$(env_or_default LABACLAW_PROVIDER LABACLAW_PROVIDER openrouter)"
+MODEL="$(env_or_default LABACLAW_MODEL LABACLAW_MODEL "")"
+LOCAL_CARGO_FEATURES="$(env_or_default LABACLAW_CARGO_FEATURES LABACLAW_CARGO_FEATURES "")"
+LOCAL_CONFIG_PATH="$(env_or_default LABACLAW_CONFIG_PATH LABACLAW_CONFIG_PATH "$HOME/.labaclaw/config.toml")"
 AUTO_CONFIG_FEATURES=""
 
 while [[ $# -gt 0 ]]; do
@@ -1533,7 +1529,7 @@ if [[ "$DOCKER_MODE" == true ]]; then
       warn "--install-rust is ignored with --docker."
   fi
 else
-  if [[ "$OS_NAME" == "Linux" && -z "$(compat_env LABACLAW_DISABLE_ALPINE_AUTO_DEPS ZEROCLAW_DISABLE_ALPINE_AUTO_DEPS "")" ]] && have_cmd apk; then
+  if [[ "$OS_NAME" == "Linux" && -z "$(env_or_default LABACLAW_DISABLE_ALPINE_AUTO_DEPS LABACLAW_DISABLE_ALPINE_AUTO_DEPS "")" ]] && have_cmd apk; then
     find_missing_alpine_prereqs
     if [[ ${#ALPINE_MISSING_PKGS[@]} -gt 0 && "$INSTALL_SYSTEM_DEPS" == false ]]; then
       info "Detected Alpine with missing prerequisites: ${ALPINE_MISSING_PKGS[*]}"
@@ -1624,7 +1620,7 @@ if [[ "$DOCKER_MODE" == true ]]; then
   echo
 
   if [[ "$DOCKER_DAEMON_MODE" == true ]]; then
-    daemon_name="$(compat_env LABACLAW_DOCKER_DAEMON_NAME ZEROCLAW_DOCKER_DAEMON_NAME labaclaw-daemon)"
+    daemon_name="$(env_or_default LABACLAW_DOCKER_DAEMON_NAME LABACLAW_DOCKER_DAEMON_NAME labaclaw-daemon)"
     echo "Daemon mode is active; onboarding was intentionally skipped."
     echo "  container: $daemon_name"
     echo "  logs:      $CONTAINER_CLI logs -f $daemon_name"

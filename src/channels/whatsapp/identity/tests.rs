@@ -4,13 +4,13 @@ use super::{WhatsAppAllowlistEntry, WhatsAppIdentity};
 #[test]
 fn display_name_prefers_verified_name() {
     let identity = WhatsAppIdentity {
-        verified_name: Some("ZeroClawAgent".into()),
+        verified_name: Some("LabaClawAgent".into()),
         full_name: Some("zeroclaw_user".into()),
         push_name: Some("zeroclaw_node".into()),
         ..WhatsAppIdentity::default()
     };
 
-    assert_eq!(identity.display_name(), Some("ZeroClawAgent"));
+    assert_eq!(identity.display_name(), Some("LabaClawAgent"));
     assert_eq!(identity.status(), WhatsAppIdentityStatus::Recognized);
 }
 

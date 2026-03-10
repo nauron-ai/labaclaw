@@ -61,7 +61,7 @@ impl ProxyConfigTool {
     fn parse_scope(raw: &str) -> Option<ProxyScope> {
         match raw.trim().to_ascii_lowercase().as_str() {
             "environment" | "env" => Some(ProxyScope::Environment),
-            "zeroclaw" | "internal" | "core" => Some(ProxyScope::Zeroclaw),
+            "zeroclaw" | "internal" | "core" => Some(ProxyScope::Labaclaw),
             "services" | "service" => Some(ProxyScope::Services),
             _ => None,
         }
@@ -342,7 +342,7 @@ impl Tool for ProxyConfigTool {
     }
 
     fn description(&self) -> &str {
-        "Manage ZeroClaw proxy settings (scope: environment | zeroclaw | services), including runtime and process env application"
+        "Manage LabaClaw proxy settings (scope: environment | zeroclaw | services), including runtime and process env application"
     }
 
     fn parameters_schema(&self) -> Value {
