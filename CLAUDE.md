@@ -26,7 +26,6 @@ Operator-facing defaults:
 - Use `LabaClaw`, `labaclaw`, `~/.labaclaw`, `LABACLAW_*`, `/etc/labaclaw`, and `labaclaw.service` in user-facing docs.
 - Keep ZeroClaw references limited to:
   - fork provenance,
-  - runtime migration status,
   - upstream sync policy.
 - Upstream docs may be synced from ZeroClaw either 1:1 or through qualitative adaptation.
 

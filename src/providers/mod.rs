@@ -1899,7 +1899,7 @@ pub struct ProviderInfo {
     pub local: bool,
 }
 
-/// Return the list of all known providers for display in `zeroclaw providers list`.
+/// Return the list of all known providers for display in `labaclaw providers list`.
 ///
 /// This is intentionally separate from the factory match in `create_provider`
 /// (display concern vs. construction concern).

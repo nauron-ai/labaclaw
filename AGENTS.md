@@ -41,10 +41,8 @@ LabaClaw is a Rust-first agent runtime optimized for:
 
 - English is the only maintained documentation language in this repository.
 - User-facing docs should normalize around the target LabaClaw surface and naming.
-- When runtime or scripts still expose legacy `zeroclaw` identifiers, call that gap out explicitly anywhere it affects setup or operations.
 - ZeroClaw may appear only in:
   - fork provenance notes,
-  - runtime migration status notes,
   - upstream sync policy notes.
 - Upstream documentation may be brought in from ZeroClaw either 1:1 or adapted qualitatively when the mesh-first LabaClaw direction requires it.
 - Keep `README.md`, `docs/README.md`, `docs/SUMMARY.md`, and `docs/docs-inventory.md` aligned when navigation changes.

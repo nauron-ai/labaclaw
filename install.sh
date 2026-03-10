@@ -4,7 +4,7 @@ set -euo pipefail
 # Canonical remote installer entrypoint.
 # Default behavior for no-arg interactive shells is TUI onboarding.
 
-BOOTSTRAP_URL="${LABACLAW_BOOTSTRAP_URL:-${ZEROCLAW_BOOTSTRAP_URL:-https://raw.githubusercontent.com/nauron-ai/labaclaw/main/scripts/bootstrap.sh}}"
+BOOTSTRAP_URL="${LABACLAW_BOOTSTRAP_URL:-https://raw.githubusercontent.com/nauron-ai/labaclaw/main/scripts/bootstrap.sh}"
 
 have_cmd() {
   command -v "$1" >/dev/null 2>&1

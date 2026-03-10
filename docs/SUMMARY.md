@@ -34,12 +34,20 @@ Last refreshed: **March 10, 2026**.
 - [mattermost-setup.md](mattermost-setup.md)
 - [nextcloud-talk-setup.md](nextcloud-talk-setup.md)
 - [proxy-agent-playbook.md](proxy-agent-playbook.md)
+- [ros2-integration-guidance.md](ros2-integration-guidance.md)
+- [wasm-tools-guide.md](wasm-tools-guide.md)
+- [PLUGINS.md](PLUGINS.md)
+- [plugins-runtime.md](plugins-runtime.md)
 
 ## Operations And Deployment
 
 - [operations/README.md](operations/README.md)
 - [operations-runbook.md](operations-runbook.md)
 - [operations/connectivity-probes-runbook.md](operations/connectivity-probes-runbook.md)
+- [operations/feature-matrix-runbook.md](operations/feature-matrix-runbook.md)
+- [operations/nightly-all-features-runbook.md](operations/nightly-all-features-runbook.md)
+- [operations/required-check-mapping.md](operations/required-check-mapping.md)
+- [operations/self-hosted-runner-remediation.md](operations/self-hosted-runner-remediation.md)
 - [release-process.md](release-process.md)
 - [network-deployment.md](network-deployment.md)
 - [troubleshooting.md](troubleshooting.md)
@@ -48,7 +56,13 @@ Last refreshed: **March 10, 2026**.
 ## Security And Reliability
 
 - [security/README.md](security/README.md)
+- [security/advisory-maintainer-checklist.md](security/advisory-maintainer-checklist.md)
+- [security/advisory-metadata-template.md](security/advisory-metadata-template.md)
+- [security/enject-inspired-hardening.md](security/enject-inspired-hardening.md)
 - [security/official-channels-and-fraud-prevention.md](security/official-channels-and-fraud-prevention.md)
+- [security/perplexity-filter.md](security/perplexity-filter.md)
+- [security/private-vulnerability-report-template.md](security/private-vulnerability-report-template.md)
+- [security/syscall-anomaly-detection.md](security/syscall-anomaly-detection.md)
 - [agnostic-security.md](agnostic-security.md)
 - [frictionless-security.md](frictionless-security.md)
 - [sandboxing.md](sandboxing.md)
@@ -89,4 +103,4 @@ Last refreshed: **March 10, 2026**.
 - [sop/syntax.md](sop/syntax.md)
 - [sop/observability.md](sop/observability.md)
 - [sop/cookbook.md](sop/cookbook.md)
-- [migration/openclaw-migration-guide.md](migration/openclaw-migration-guide.md)
+- [Legacy OpenClaw migration guide](migration/openclaw-migration-guide.md)

@@ -269,14 +269,9 @@ export default function App() {
           <aside className="fork-card">
             <p className="fork-label">Fork provenance and sync policy</p>
             <p>
-              LabaClaw is a public fork of ZeroClaw. The docs are being normalized around the target
-              LabaClaw surface:
+              LabaClaw is a public fork of ZeroClaw. The documentation and operator surface use:
               <code> labaclaw</code>, <code>~/.labaclaw</code>, <code>LABACLAW_*</code>,
               <code> /etc/labaclaw</code>, and <code>labaclaw.service</code>.
-            </p>
-            <p>
-              The runtime still carries some legacy <code>zeroclaw</code> identifiers and is being aligned
-              in a follow-up code migration track.
             </p>
             <p>
               Upstream content may land from ZeroClaw either 1:1 or as a qualitative adaptation when the
