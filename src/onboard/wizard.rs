@@ -2184,7 +2184,7 @@ pub async fn run_models_refresh(
             print_model_preview(&cached.models);
             println!();
             println!(
-                "Tip: run `zeroclaw models refresh --force --provider {}` to fetch latest now.",
+                "Tip: run `labaclaw models refresh --force --provider {}` to fetch latest now.",
                 provider_name
             );
             return Ok(());
@@ -2249,7 +2249,7 @@ pub async fn run_models_list(config: &Config, provider_override: Option<&str>) -
     let Some(cached) = cached else {
         println!();
         println!(
-            "  No cached models for '{provider_name}'. Run: zeroclaw models refresh --provider {provider_name}"
+            "  No cached models for '{provider_name}'. Run: labaclaw models refresh --provider {provider_name}"
         );
         println!();
         return Ok(());

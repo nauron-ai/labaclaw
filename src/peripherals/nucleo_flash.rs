@@ -34,7 +34,7 @@ pub fn flash_nucleo_firmware() -> Result<()> {
     let firmware_dir = repo_root.join("firmware").join("zeroclaw-nucleo");
     if !firmware_dir.join("Cargo.toml").exists() {
         anyhow::bail!(
-            "Nucleo firmware not found at {}. Run from zeroclaw repo root.",
+            "Nucleo firmware not found at {}. Run from the LabaClaw repo root.",
             firmware_dir.display()
         );
     }

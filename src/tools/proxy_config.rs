@@ -61,7 +61,7 @@ impl ProxyConfigTool {
     fn parse_scope(raw: &str) -> Option<ProxyScope> {
         match raw.trim().to_ascii_lowercase().as_str() {
             "environment" | "env" => Some(ProxyScope::Environment),
-            "zeroclaw" | "internal" | "core" => Some(ProxyScope::Labaclaw),
+            "labaclaw" => Some(ProxyScope::Labaclaw),
             "services" | "service" => Some(ProxyScope::Services),
             _ => None,
         }
@@ -185,7 +185,7 @@ impl ProxyConfigTool {
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("'scope' must be a string"))?;
             proxy.scope = Self::parse_scope(scope).ok_or_else(|| {
-                anyhow::anyhow!("Invalid scope '{scope}'. Use environment|zeroclaw|services")
+                anyhow::anyhow!("Invalid scope '{scope}'. Use environment|labaclaw|services")
             })?;
         }
 
@@ -342,7 +342,7 @@ impl Tool for ProxyConfigTool {
     }
 
     fn description(&self) -> &str {
-        "Manage LabaClaw proxy settings (scope: environment | zeroclaw | services), including runtime and process env application"
+        "Manage LabaClaw proxy settings (scope: environment | labaclaw | services), including runtime and process env application"
     }
 
     fn parameters_schema(&self) -> Value {
@@ -360,7 +360,7 @@ impl Tool for ProxyConfigTool {
                 },
                 "scope": {
                     "type": "string",
-                    "description": "Proxy scope: environment | zeroclaw | services"
+                    "description": "Proxy scope: environment | labaclaw | services"
                 },
                 "http_proxy": {
                     "type": ["string", "null"],

@@ -209,7 +209,7 @@ max_tool_iterations = 24
                 MockCronJob {
                     id: "mock-cron-1".to_string(),
                     name: Some("Daily sync".to_string()),
-                    command: "zeroclaw sync --channels".to_string(),
+                    command: "labaclaw sync --channels".to_string(),
                     next_run: one_hour_ahead,
                     last_run: Some(four_hours_ago),
                     last_status: Some("ok".to_string()),
@@ -218,7 +218,7 @@ max_tool_iterations = 24
                 MockCronJob {
                     id: "mock-cron-2".to_string(),
                     name: Some("Budget audit".to_string()),
-                    command: "zeroclaw cost audit".to_string(),
+                    command: "labaclaw cost audit".to_string(),
                     next_run: (now + Duration::hours(12)).to_rfc3339(),
                     last_run: None,
                     last_status: None,

@@ -33,10 +33,9 @@ Last refreshed: **March 10, 2026**.
 ## Placement Rules
 
 1. English is the only maintained documentation language in this repository.
-2. User-facing docs should normalize around the target LabaClaw surface and naming.
+2. User-facing docs should use the current LabaClaw surface and naming.
 3. ZeroClaw may appear only in:
    - fork provenance statements,
-   - runtime migration status notes,
    - upstream sync policy notes.
 4. Every new major doc should be linked from:
    - the nearest category index,
@@ -49,7 +48,6 @@ Last refreshed: **March 10, 2026**.
 
 - The documentation system is English-only.
 - Upstream ZeroClaw content may be pulled either 1:1 or adapted qualitatively, depending on fit with the LabaClaw mesh-first and distributed direction.
-- Docs are allowed to lead the runtime rename in this phase; the code/runtime rename is a separate follow-up track.
 
 ## Companion Indexes
 

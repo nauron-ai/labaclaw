@@ -3539,7 +3539,7 @@ impl Channel for TelegramChannel {
                 if error_code == 409 {
                     tracing::warn!(
                         "Telegram polling conflict (409): {description}. \
-Ensure only one `zeroclaw` process is using this bot token."
+Ensure only one `labaclaw` process is using this bot token."
                     );
                     // Back off for 35 seconds — longer than Telegram's 30-second poll
                     // timeout — so any competing session (e.g. a stale connection from

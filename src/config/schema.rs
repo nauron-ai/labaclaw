@@ -2890,7 +2890,7 @@ pub fn build_runtime_proxy_client_with_timeouts(
 fn parse_proxy_scope(raw: &str) -> Option<ProxyScope> {
     match raw.trim().to_ascii_lowercase().as_str() {
         "environment" | "env" => Some(ProxyScope::Environment),
-        "labaclaw" | "internal" | "core" => Some(ProxyScope::Labaclaw),
+        "labaclaw" => Some(ProxyScope::Labaclaw),
         "services" | "service" => Some(ProxyScope::Services),
         _ => None,
     }
