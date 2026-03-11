@@ -1770,6 +1770,9 @@ pub struct GatewayConfig {
     /// Allow binding to non-localhost without a tunnel (default: false)
     #[serde(default)]
     pub allow_public_bind: bool,
+    /// Browser origins allowed to call dashboard-oriented HTTP APIs from a separate web app.
+    #[serde(default)]
+    pub dashboard_allowed_origins: Vec<String>,
     /// Paired bearer tokens (managed automatically, not user-edited)
     #[serde(default)]
     pub paired_tokens: Vec<String>,
@@ -1854,6 +1857,64 @@ fn default_true() -> bool {
     true
 }
 
+fn normalize_dashboard_origin_impl(origin: &str) -> Result<String> {
+    let trimmed = origin.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        anyhow::bail!("expected a non-empty origin");
+    }
+
+    let parsed = reqwest::Url::parse(trimmed)
+        .with_context(|| format!("expected a valid http:// or https:// origin, got {origin:?}"))?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        other => anyhow::bail!("unsupported origin scheme {other:?}; expected http or https"),
+    }
+
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        anyhow::bail!("origins must not include username or password");
+    }
+
+    if parsed.path() != "/" || parsed.query().is_some() || parsed.fragment().is_some() {
+        anyhow::bail!("origins must not include path, query, or fragment components");
+    }
+
+    let host = parsed
+        .host_str()
+        .context("origins must include a hostname")?
+        .to_ascii_lowercase();
+    let mut normalized = format!("{}://{host}", parsed.scheme());
+
+    if let Some(port) = parsed.port() {
+        let is_default = matches!((parsed.scheme(), port), ("http", 80) | ("https", 443));
+        if !is_default {
+            normalized.push(':');
+            normalized.push_str(&port.to_string());
+        }
+    }
+
+    Ok(normalized)
+}
+
+pub(crate) fn normalize_dashboard_origin(origin: &str) -> Option<String> {
+    normalize_dashboard_origin_impl(origin).ok()
+}
+
+fn normalize_dashboard_origin_list(origins: &[String]) -> Result<Vec<String>> {
+    let mut seen = std::collections::HashSet::new();
+    let mut normalized = Vec::with_capacity(origins.len());
+
+    for (index, origin) in origins.iter().enumerate() {
+        let value = normalize_dashboard_origin_impl(origin).with_context(|| {
+            format!("gateway.dashboard_allowed_origins[{index}] is invalid ({origin:?})")
+        })?;
+        if seen.insert(value.clone()) {
+            normalized.push(value);
+        }
+    }
+
+    Ok(normalized)
+}
+
 impl Default for GatewayConfig {
     fn default() -> Self {
         Self {
@@ -1861,6 +1922,7 @@ impl Default for GatewayConfig {
             host: default_gateway_host(),
             require_pairing: true,
             allow_public_bind: false,
+            dashboard_allowed_origins: Vec::new(),
             paired_tokens: Vec::new(),
             pair_rate_limit_per_minute: default_pair_rate_limit(),
             webhook_rate_limit_per_minute: default_webhook_rate_limit(),
@@ -8137,6 +8199,7 @@ impl Config {
         if self.gateway.host.trim().is_empty() {
             anyhow::bail!("gateway.host must not be empty");
         }
+        normalize_dashboard_origin_list(&self.gateway.dashboard_allowed_origins)?;
 
         // Reliability
         let configured_fallbacks = self
@@ -9079,6 +9142,20 @@ impl Config {
         // Allow public bind: LABACLAW_ALLOW_PUBLIC_BIND
         if let Some(val) = env_value_any(&["LABACLAW_ALLOW_PUBLIC_BIND"]) {
             self.gateway.allow_public_bind = val == "1" || val.eq_ignore_ascii_case("true");
+        }
+
+        if let Some(origins) = env_value_any(&["LABACLAW_DASHBOARD_ALLOWED_ORIGINS"]) {
+            self.gateway.dashboard_allowed_origins = origins
+                .split(',')
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+                .collect();
+        }
+        if let Ok(normalized) =
+            normalize_dashboard_origin_list(&self.gateway.dashboard_allowed_origins)
+        {
+            self.gateway.dashboard_allowed_origins = normalized;
         }
 
         // Temperature: LABACLAW_TEMPERATURE
@@ -11929,6 +12006,10 @@ allowed_sender_ids = ["U111", "U222"]
             host: "127.0.0.1".into(),
             require_pairing: true,
             allow_public_bind: false,
+            dashboard_allowed_origins: vec![
+                "https://ops.example.com".into(),
+                "http://localhost:4173".into(),
+            ],
             paired_tokens: vec!["zc_test_token".into()],
             pair_rate_limit_per_minute: 12,
             webhook_rate_limit_per_minute: 80,
@@ -11946,6 +12027,10 @@ allowed_sender_ids = ["U111", "U222"]
         let parsed: GatewayConfig = toml::from_str(&toml_str).unwrap();
         assert!(parsed.require_pairing);
         assert!(!parsed.allow_public_bind);
+        assert_eq!(
+            parsed.dashboard_allowed_origins,
+            vec!["https://ops.example.com", "http://localhost:4173"]
+        );
         assert_eq!(parsed.paired_tokens, vec!["zc_test_token"]);
         assert_eq!(parsed.pair_rate_limit_per_minute, 12);
         assert_eq!(parsed.webhook_rate_limit_per_minute, 80);
@@ -12600,6 +12685,43 @@ provider_api = "not-a-real-mode"
         assert!(
             parsed.is_err(),
             "invalid provider_api should fail to deserialize"
+        );
+    }
+
+    #[test]
+    async fn dashboard_allowed_origins_invalid_value_is_rejected() {
+        let mut config = Config::default();
+        config.gateway.dashboard_allowed_origins =
+            vec!["https://ops.example.com/dashboard".to_string()];
+
+        let err = config
+            .validate()
+            .expect_err("dashboard origin with path should be rejected");
+        assert!(
+            err.to_string()
+                .contains("gateway.dashboard_allowed_origins[0] is invalid"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    async fn dashboard_allowed_origins_with_userinfo_are_rejected() {
+        let mut config = Config::default();
+        config.gateway.dashboard_allowed_origins =
+            vec!["https://user:pass@ops.example.com".to_string()];
+
+        let err = config
+            .validate()
+            .expect_err("dashboard origin with userinfo should be rejected");
+        let detailed = format!("{err:#}");
+        assert!(
+            err.to_string()
+                .contains("gateway.dashboard_allowed_origins[0] is invalid"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            detailed.contains("origins must not include username or password"),
+            "unexpected error: {detailed}"
         );
     }
 
@@ -13757,6 +13879,24 @@ default_model = "legacy-model"
         assert_eq!(config.gateway.host, "0.0.0.0");
 
         std::env::remove_var("LABACLAW_GATEWAY_HOST");
+    }
+
+    #[test]
+    async fn env_override_dashboard_allowed_origins_normalizes_values() {
+        let _env_guard = env_override_lock().await;
+        let mut config = Config::default();
+
+        std::env::set_var(
+            "LABACLAW_DASHBOARD_ALLOWED_ORIGINS",
+            "https://Ops.Example.com/,http://localhost:80",
+        );
+        config.apply_env_overrides();
+        assert_eq!(
+            config.gateway.dashboard_allowed_origins,
+            vec!["https://ops.example.com", "http://localhost"]
+        );
+
+        std::env::remove_var("LABACLAW_DASHBOARD_ALLOWED_ORIGINS");
     }
 
     #[test]

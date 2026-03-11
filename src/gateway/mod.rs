@@ -12,14 +12,13 @@ mod mock_dashboard;
 mod openai_compat;
 mod openclaw_compat;
 pub mod sse;
-pub mod static_files;
 pub mod ws;
 
 use crate::channels::{
     BlueBubblesChannel, Channel, GitHubChannel, LinqChannel, NextcloudTalkChannel, QQChannel,
     SendMessage, WatiChannel, WhatsAppChannel,
 };
-use crate::config::Config;
+use crate::config::{schema::normalize_dashboard_origin, Config};
 use crate::cost::CostTracker;
 use crate::memory::{self, Memory, MemoryCategory};
 use crate::providers::{self, ChatMessage, Provider};
@@ -33,7 +32,7 @@ use anyhow::{Context, Result};
 use axum::{
     body::{Body, Bytes},
     extract::{ConnectInfo, Query, State},
-    http::{header, HeaderMap, HeaderValue, StatusCode},
+    http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Json, Response},
     routing::{delete, get, post, put},
@@ -41,10 +40,11 @@ use axum::{
 };
 use futures_util::StreamExt;
 use parking_lot::Mutex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tower_http::cors::CorsLayer;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::timeout::TimeoutLayer;
 use uuid::Uuid;
@@ -79,6 +79,60 @@ async fn security_headers_middleware(req: axum::extract::Request, next: Next) ->
         HeaderValue::from_static("strict-origin-when-cross-origin"),
     );
     response
+}
+
+fn normalized_dashboard_origins(origins: &[String]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut normalized = Vec::new();
+
+    for origin in origins {
+        let Some(value) = normalize_dashboard_origin(origin) else {
+            continue;
+        };
+        if seen.insert(value.clone()) {
+            normalized.push(value);
+        }
+    }
+
+    normalized
+}
+
+fn build_dashboard_cors_layer(origins: &[String]) -> Option<CorsLayer> {
+    let allow_origins: Vec<HeaderValue> = normalized_dashboard_origins(origins)
+        .into_iter()
+        .filter_map(|origin| HeaderValue::from_str(&origin).ok())
+        .collect();
+    if allow_origins.is_empty() {
+        return None;
+    }
+
+    Some(
+        CorsLayer::new()
+            .allow_origin(allow_origins)
+            .max_age(Duration::from_secs(3600))
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::DELETE,
+                Method::OPTIONS,
+            ])
+            .allow_headers([
+                header::ACCEPT,
+                header::AUTHORIZATION,
+                header::CONTENT_TYPE,
+                HeaderName::from_static("x-pairing-code"),
+            ]),
+    )
+}
+
+pub(crate) fn is_dashboard_origin_allowed(origins: &[String], origin: &str) -> bool {
+    let Some(normalized_origin) = normalize_dashboard_origin(origin) else {
+        return false;
+    };
+    normalized_dashboard_origins(origins)
+        .iter()
+        .any(|allowed| allowed == &normalized_origin)
 }
 
 fn webhook_memory_key() -> String {
@@ -721,7 +775,6 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
     if let Some(ref url) = tunnel_url {
         println!("  🌐 Public URL: {url}");
     }
-    println!("  🌐 Web Dashboard: http://{display_addr}/");
     println!("  POST /pair      — pair a new client (X-Pairing-Code header)");
     println!("  POST /webhook   — {{\"message\": \"your prompt\"}}");
     println!("  POST /api/chat  — {{\"message\": \"...\", \"context\": [...]}} (tools-enabled, OpenClaw compat)");
@@ -904,8 +957,6 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
         .route("/api/events", get(sse::handle_sse_events))
         // ── WebSocket agent chat ──
         .route("/ws/chat", get(ws::handle_ws_chat))
-        // ── Static assets (web dashboard) ──
-        .route("/_app/{*path}", get(static_files::handle_static))
         // ── Config PUT with larger body limit ──
         .merge(config_put_router)
         .with_state(state)
@@ -914,9 +965,14 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(REQUEST_TIMEOUT_SECS),
-        ))
-        // ── SPA fallback: non-API GET requests serve index.html ──
-        .fallback(get(static_files::handle_spa_fallback));
+        ));
+    let app = if let Some(cors_layer) =
+        build_dashboard_cors_layer(&config.gateway.dashboard_allowed_origins)
+    {
+        app.layer(cors_layer)
+    } else {
+        app
+    };
 
     // Run the server
     let serve_result = axum::serve(
@@ -5867,6 +5923,120 @@ Reminder set successfully."#;
         assert_eq!(
             response.headers().get(header::X_FRAME_OPTIONS).unwrap(),
             "DENY"
+        );
+    }
+
+    #[test]
+    fn dashboard_origin_normalization_rejects_paths_queries_fragments_and_non_http_schemes() {
+        assert_eq!(
+            super::normalize_dashboard_origin("https://ops.example.com/"),
+            Some(String::from("https://ops.example.com"))
+        );
+        assert_eq!(
+            super::normalize_dashboard_origin("http://localhost:4173"),
+            Some(String::from("http://localhost:4173"))
+        );
+        assert_eq!(
+            super::normalize_dashboard_origin("https://ops.example.com:443"),
+            Some(String::from("https://ops.example.com"))
+        );
+        assert_eq!(
+            super::normalize_dashboard_origin("http://localhost:80"),
+            Some(String::from("http://localhost"))
+        );
+        assert_eq!(
+            super::normalize_dashboard_origin("https://ops.example.com/dashboard"),
+            None
+        );
+        assert_eq!(
+            super::normalize_dashboard_origin("https://ops.example.com?foo=bar"),
+            None
+        );
+        assert_eq!(
+            super::normalize_dashboard_origin("https://ops.example.com#section"),
+            None
+        );
+        assert_eq!(
+            super::normalize_dashboard_origin("wss://ops.example.com"),
+            None
+        );
+    }
+
+    #[test]
+    fn dashboard_cors_layer_ignores_empty_and_invalid_origin_lists() {
+        assert!(super::build_dashboard_cors_layer(&[]).is_none());
+        assert!(
+            super::build_dashboard_cors_layer(&[String::from("wss://ops.example.com")]).is_none()
+        );
+    }
+
+    #[test]
+    fn dashboard_origin_allowlist_matches_normalized_origins_only() {
+        let origins = vec![String::from("https://ops.example.com/")];
+        assert!(super::is_dashboard_origin_allowed(
+            &origins,
+            "https://ops.example.com"
+        ));
+        assert!(super::is_dashboard_origin_allowed(
+            &[String::from("https://ops.example.com:443")],
+            "https://ops.example.com"
+        ));
+        assert!(!super::is_dashboard_origin_allowed(
+            &origins,
+            "https://evil.example.com"
+        ));
+        assert!(!super::is_dashboard_origin_allowed(&origins, "not-a-url"));
+    }
+
+    #[tokio::test]
+    async fn dashboard_cors_layer_allows_pairing_preflight_for_configured_origin() {
+        use axum::body::Body;
+        use axum::http::Request;
+        use tower::ServiceExt;
+
+        let app = Router::new().route("/pair", post(|| async { "ok" })).layer(
+            super::build_dashboard_cors_layer(&[String::from("https://ops.example.com")])
+                .expect("cors layer should build"),
+        );
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::OPTIONS)
+                    .uri("/pair")
+                    .header(header::ORIGIN, "https://ops.example.com")
+                    .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                    .header(header::ACCESS_CONTROL_REQUEST_HEADERS, "x-pairing-code")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .unwrap(),
+            "https://ops.example.com"
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(header::ACCESS_CONTROL_MAX_AGE)
+                .unwrap(),
+            "3600"
+        );
+        let allow_headers = response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_HEADERS)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("");
+        assert!(
+            allow_headers
+                .to_ascii_lowercase()
+                .contains("x-pairing-code"),
+            "preflight should allow X-Pairing-Code"
         );
     }
 }
