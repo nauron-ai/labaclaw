@@ -142,7 +142,25 @@
       "name": "chat",
       "transport": "websocket",
       "path": "/ws/chat",
-      "auth": "bearer"
+      "auth": {
+        "type": "bearer",
+        "transports": [
+          {
+            "kind": "authorization_header",
+            "header": "Authorization",
+            "format": "Bearer <token>"
+          },
+          {
+            "kind": "websocket_subprotocol",
+            "header": "Sec-WebSocket-Protocol",
+            "format": "bearer.<token>"
+          },
+          {
+            "kind": "query_parameter",
+            "name": "token"
+          }
+        ]
+      }
     }
   ]
 }

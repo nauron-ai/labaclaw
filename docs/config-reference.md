@@ -993,7 +993,8 @@ Notes:
 
 - `dashboard_allowed_origins` should contain exact origins such as `https://ops.example.com` or `http://localhost:4173`.
 - Environment override: `LABACLAW_DASHBOARD_ALLOWED_ORIGINS=https://ops.example.com,http://localhost:4173`
-- When empty, no CORS headers are added for dashboard-style browser access and `/ws/chat` does not enforce an origin allowlist.
+- When empty, no CORS headers are added for cross-origin dashboard browser access, but same-origin or reverse-proxy deployments remain unaffected.
+- When empty, `/ws/chat` does not enforce a dashboard origin allowlist.
 
 ## `[gateway.node_control]` (experimental)
 

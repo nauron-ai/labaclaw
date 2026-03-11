@@ -18,7 +18,7 @@ use crate::channels::{
     BlueBubblesChannel, Channel, GitHubChannel, LinqChannel, NextcloudTalkChannel, QQChannel,
     SendMessage, WatiChannel, WhatsAppChannel,
 };
-use crate::config::Config;
+use crate::config::{schema::normalize_dashboard_origin, Config};
 use crate::cost::CostTracker;
 use crate::memory::{self, Memory, MemoryCategory};
 use crate::providers::{self, ChatMessage, Provider};
@@ -81,31 +81,6 @@ async fn security_headers_middleware(req: axum::extract::Request, next: Next) ->
     response
 }
 
-fn normalize_dashboard_origin(origin: &str) -> Option<String> {
-    let trimmed = origin.trim().trim_end_matches('/');
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    let parsed = reqwest::Url::parse(trimmed).ok()?;
-    match parsed.scheme() {
-        "http" | "https" => {}
-        _ => return None,
-    }
-
-    if parsed.path() != "/" || parsed.query().is_some() || parsed.fragment().is_some() {
-        return None;
-    }
-
-    let host = parsed.host_str()?;
-    let mut normalized = format!("{}://{host}", parsed.scheme());
-    if let Some(port) = parsed.port() {
-        normalized.push(':');
-        normalized.push_str(&port.to_string());
-    }
-    Some(normalized)
-}
-
 fn normalized_dashboard_origins(origins: &[String]) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut normalized = Vec::new();
@@ -134,6 +109,7 @@ fn build_dashboard_cors_layer(origins: &[String]) -> Option<CorsLayer> {
     Some(
         CorsLayer::new()
             .allow_origin(allow_origins)
+            .max_age(Duration::from_secs(3600))
             .allow_methods([
                 Method::GET,
                 Method::POST,
@@ -5951,7 +5927,7 @@ Reminder set successfully."#;
     }
 
     #[test]
-    fn dashboard_origin_normalization_rejects_paths_and_non_http_schemes() {
+    fn dashboard_origin_normalization_rejects_paths_queries_fragments_and_non_http_schemes() {
         assert_eq!(
             super::normalize_dashboard_origin("https://ops.example.com/"),
             Some(String::from("https://ops.example.com"))
@@ -5961,13 +5937,55 @@ Reminder set successfully."#;
             Some(String::from("http://localhost:4173"))
         );
         assert_eq!(
+            super::normalize_dashboard_origin("https://ops.example.com:443"),
+            Some(String::from("https://ops.example.com"))
+        );
+        assert_eq!(
+            super::normalize_dashboard_origin("http://localhost:80"),
+            Some(String::from("http://localhost"))
+        );
+        assert_eq!(
             super::normalize_dashboard_origin("https://ops.example.com/dashboard"),
+            None
+        );
+        assert_eq!(
+            super::normalize_dashboard_origin("https://ops.example.com?foo=bar"),
+            None
+        );
+        assert_eq!(
+            super::normalize_dashboard_origin("https://ops.example.com#section"),
             None
         );
         assert_eq!(
             super::normalize_dashboard_origin("wss://ops.example.com"),
             None
         );
+    }
+
+    #[test]
+    fn dashboard_cors_layer_ignores_empty_and_invalid_origin_lists() {
+        assert!(super::build_dashboard_cors_layer(&[]).is_none());
+        assert!(
+            super::build_dashboard_cors_layer(&[String::from("wss://ops.example.com")]).is_none()
+        );
+    }
+
+    #[test]
+    fn dashboard_origin_allowlist_matches_normalized_origins_only() {
+        let origins = vec![String::from("https://ops.example.com/")];
+        assert!(super::is_dashboard_origin_allowed(
+            &origins,
+            "https://ops.example.com"
+        ));
+        assert!(super::is_dashboard_origin_allowed(
+            &[String::from("https://ops.example.com:443")],
+            "https://ops.example.com"
+        ));
+        assert!(!super::is_dashboard_origin_allowed(
+            &origins,
+            "https://evil.example.com"
+        ));
+        assert!(!super::is_dashboard_origin_allowed(&origins, "not-a-url"));
     }
 
     #[tokio::test]
@@ -6001,6 +6019,13 @@ Reminder set successfully."#;
                 .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
                 .unwrap(),
             "https://ops.example.com"
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(header::ACCESS_CONTROL_MAX_AGE)
+                .unwrap(),
+            "3600"
         );
         let allow_headers = response
             .headers()

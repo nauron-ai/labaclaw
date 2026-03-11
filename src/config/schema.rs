@@ -1857,6 +1857,60 @@ fn default_true() -> bool {
     true
 }
 
+fn normalize_dashboard_origin_impl(origin: &str) -> Result<String> {
+    let trimmed = origin.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        anyhow::bail!("expected a non-empty origin");
+    }
+
+    let parsed = reqwest::Url::parse(trimmed)
+        .with_context(|| format!("expected a valid http:// or https:// origin, got {origin:?}"))?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        other => anyhow::bail!("unsupported origin scheme {other:?}; expected http or https"),
+    }
+
+    if parsed.path() != "/" || parsed.query().is_some() || parsed.fragment().is_some() {
+        anyhow::bail!("origins must not include path, query, or fragment components");
+    }
+
+    let host = parsed
+        .host_str()
+        .context("origins must include a hostname")?
+        .to_ascii_lowercase();
+    let mut normalized = format!("{}://{host}", parsed.scheme());
+
+    if let Some(port) = parsed.port() {
+        let is_default = matches!((parsed.scheme(), port), ("http", 80) | ("https", 443));
+        if !is_default {
+            normalized.push(':');
+            normalized.push_str(&port.to_string());
+        }
+    }
+
+    Ok(normalized)
+}
+
+pub(crate) fn normalize_dashboard_origin(origin: &str) -> Option<String> {
+    normalize_dashboard_origin_impl(origin).ok()
+}
+
+fn normalize_dashboard_origin_list(origins: &[String]) -> Result<Vec<String>> {
+    let mut seen = std::collections::HashSet::new();
+    let mut normalized = Vec::with_capacity(origins.len());
+
+    for (index, origin) in origins.iter().enumerate() {
+        let value = normalize_dashboard_origin_impl(origin).with_context(|| {
+            format!("gateway.dashboard_allowed_origins[{index}] is invalid ({origin:?})")
+        })?;
+        if seen.insert(value.clone()) {
+            normalized.push(value);
+        }
+    }
+
+    Ok(normalized)
+}
+
 impl Default for GatewayConfig {
     fn default() -> Self {
         Self {
@@ -8141,6 +8195,7 @@ impl Config {
         if self.gateway.host.trim().is_empty() {
             anyhow::bail!("gateway.host must not be empty");
         }
+        normalize_dashboard_origin_list(&self.gateway.dashboard_allowed_origins)?;
 
         // Reliability
         let configured_fallbacks = self
@@ -9092,6 +9147,11 @@ impl Config {
                 .filter(|value| !value.is_empty())
                 .map(ToOwned::to_owned)
                 .collect();
+        }
+        if let Ok(normalized) =
+            normalize_dashboard_origin_list(&self.gateway.dashboard_allowed_origins)
+        {
+            self.gateway.dashboard_allowed_origins = normalized;
         }
 
         // Temperature: LABACLAW_TEMPERATURE
@@ -12625,6 +12685,22 @@ provider_api = "not-a-real-mode"
     }
 
     #[test]
+    async fn dashboard_allowed_origins_invalid_value_is_rejected() {
+        let mut config = Config::default();
+        config.gateway.dashboard_allowed_origins =
+            vec!["https://ops.example.com/dashboard".to_string()];
+
+        let err = config
+            .validate()
+            .expect_err("dashboard origin with path should be rejected");
+        assert!(
+            err.to_string()
+                .contains("gateway.dashboard_allowed_origins[0] is invalid"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
     async fn model_route_max_tokens_must_be_positive_when_set() {
         let mut config = Config::default();
         config.model_routes = vec![ModelRouteConfig {
@@ -13778,6 +13854,24 @@ default_model = "legacy-model"
         assert_eq!(config.gateway.host, "0.0.0.0");
 
         std::env::remove_var("LABACLAW_GATEWAY_HOST");
+    }
+
+    #[test]
+    async fn env_override_dashboard_allowed_origins_normalizes_values() {
+        let _env_guard = env_override_lock().await;
+        let mut config = Config::default();
+
+        std::env::set_var(
+            "LABACLAW_DASHBOARD_ALLOWED_ORIGINS",
+            "https://Ops.Example.com/,http://localhost:80",
+        );
+        config.apply_env_overrides();
+        assert_eq!(
+            config.gateway.dashboard_allowed_origins,
+            vec!["https://ops.example.com", "http://localhost"]
+        );
+
+        std::env::remove_var("LABACLAW_DASHBOARD_ALLOWED_ORIGINS");
     }
 
     #[test]
