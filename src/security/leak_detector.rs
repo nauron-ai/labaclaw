@@ -316,7 +316,11 @@ impl LeakDetector {
         let threshold = (HIGH_ENTROPY_BASELINE + (self.sensitivity - 0.5) * 0.6).clamp(3.9, 4.8);
         let mut flagged = false;
 
-        for token in extract_candidate_tokens(content) {
+        static URL_PATTERN: OnceLock<Regex> = OnceLock::new();
+        let url_re = URL_PATTERN.get_or_init(|| Regex::new(r"https?://\S+").unwrap());
+        let content_without_urls = url_re.replace_all(content, "");
+
+        for token in extract_candidate_tokens(&content_without_urls) {
             if token.len() < ENTROPY_TOKEN_MIN_LEN {
                 continue;
             }
@@ -524,6 +528,29 @@ MIIEowIBAAKCAQEA0ZPr5JeyVDonXsKhfq...
         let content = "the quick brown fox jumps over the lazy dog";
         let result = detector.scan(content);
         assert!(matches!(result, LeakResult::Clean));
+    }
+
+    #[test]
+    fn url_path_segments_not_flagged_as_high_entropy() {
+        let detector = LeakDetector::with_sensitivity(0.9);
+        let content =
+            "See https://example.org/documents/2024-report-a1b2c3d4e5f6g7h8i9j0.pdf for details";
+        let result = detector.scan(content);
+        assert!(matches!(result, LeakResult::Clean));
+    }
+
+    #[test]
+    fn standalone_high_entropy_tokens_are_still_detected() {
+        let detector = LeakDetector::with_sensitivity(0.9);
+        let content = "Found credential: aB3xK9mW2pQ7vL4nR8sT1yU6hD0jF5cG";
+        let result = detector.scan(content);
+        match result {
+            LeakResult::Detected { patterns, redacted } => {
+                assert!(patterns.iter().any(|p| p.contains("High-entropy token")));
+                assert!(redacted.contains("[REDACTED_HIGH_ENTROPY_TOKEN]"));
+            }
+            LeakResult::Clean => panic!("expected high-entropy detection"),
+        }
     }
 
     #[test]
