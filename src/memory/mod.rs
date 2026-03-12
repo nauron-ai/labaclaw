@@ -140,6 +140,7 @@ fn resolve_embedding_config(
     embedding_routes: &[EmbeddingRouteConfig],
     api_key: Option<&str>,
 ) -> ResolvedEmbeddingConfig {
+    let base_provider = config.embedding_provider.trim();
     let caller_api_key = api_key
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -147,12 +148,10 @@ fn resolve_embedding_config(
     // Prefer a provider-specific env var over the caller-supplied key, which
     // may come from the default (chat) provider and differ from the embedding
     // provider (issue #3083: gemini key leaking to openai embeddings endpoint).
-    let fallback_api_key = resolve_embedding_fallback_api_key(
-        config.embedding_provider.trim(),
-        caller_api_key.as_ref(),
-    );
+    let fallback_api_key =
+        resolve_embedding_fallback_api_key(base_provider, caller_api_key.as_ref());
     let fallback = ResolvedEmbeddingConfig {
-        provider: config.embedding_provider.trim().to_string(),
+        provider: base_provider.to_string(),
         model: config.embedding_model.trim().to_string(),
         dimensions: config.embedding_dimensions,
         api_key: fallback_api_key.clone(),
@@ -195,8 +194,11 @@ fn resolve_embedding_config(
         .map(str::trim)
         .filter(|value: &&str| !value.is_empty())
         .map(|value| value.to_string());
-    let routed_fallback_api_key =
-        resolve_embedding_fallback_api_key(provider, caller_api_key.as_ref());
+    let routed_fallback_api_key = if provider.eq_ignore_ascii_case(base_provider) {
+        resolve_embedding_fallback_api_key(provider, caller_api_key.as_ref())
+    } else {
+        resolve_provider_specific_env_credential(provider)
+    };
 
     ResolvedEmbeddingConfig {
         provider: provider.to_string(),
@@ -908,5 +910,52 @@ mod tests {
 
         assert_eq!(resolved.api_key.as_deref(), Some("opencode-go-from-env"));
         assert_ne!(resolved.api_key.as_deref(), Some("caller-key"));
+    }
+
+    #[test]
+    fn resolve_embedding_config_does_not_forward_caller_key_to_different_routed_provider() {
+        let cfg = MemoryConfig {
+            embedding_provider: "openai".into(),
+            embedding_model: "hint:semantic".into(),
+            embedding_dimensions: 1536,
+            ..MemoryConfig::default()
+        };
+        let routes = vec![EmbeddingRouteConfig {
+            hint: "semantic".into(),
+            provider: "custom:https://api.example.com/v1".into(),
+            model: "custom-embed-v2".into(),
+            dimensions: Some(1024),
+            api_key: None,
+        }];
+
+        let resolved = resolve_embedding_config(&cfg, &routes, Some("gemini-caller-key"));
+
+        assert_eq!(resolved.provider, "custom:https://api.example.com/v1");
+        assert_eq!(resolved.api_key, None);
+    }
+
+    #[test]
+    fn resolve_embedding_config_keeps_caller_key_when_hint_route_stays_on_same_provider() {
+        let _env_lock = env_lock();
+        let _openai_guard = EnvGuard::set("OPENAI_API_KEY", None);
+
+        let cfg = MemoryConfig {
+            embedding_provider: "openai".into(),
+            embedding_model: "hint:semantic".into(),
+            embedding_dimensions: 1536,
+            ..MemoryConfig::default()
+        };
+        let routes = vec![EmbeddingRouteConfig {
+            hint: "semantic".into(),
+            provider: "OpenAI".into(),
+            model: "text-embedding-3-large".into(),
+            dimensions: Some(3072),
+            api_key: None,
+        }];
+
+        let resolved = resolve_embedding_config(&cfg, &routes, Some("openai-caller-key"));
+
+        assert_eq!(resolved.provider, "OpenAI");
+        assert_eq!(resolved.api_key.as_deref(), Some("openai-caller-key"));
     }
 }
