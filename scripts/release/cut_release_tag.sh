@@ -18,6 +18,32 @@ Options:
 USAGE
 }
 
+detect_origin_repo() {
+  local remote_url repo
+
+  remote_url="$(git remote get-url origin 2>/dev/null || true)"
+  case "$remote_url" in
+    git@github.com:*.git)
+      repo="${remote_url#git@github.com:}"
+      repo="${repo%.git}"
+      ;;
+    https://github.com/*)
+      repo="${remote_url#https://github.com/}"
+      repo="${repo%.git}"
+      ;;
+    *)
+      repo=""
+      ;;
+  esac
+
+  if [[ -n "$repo" ]]; then
+    printf '%s\n' "$repo"
+    return 0
+  fi
+
+  gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true
+}
+
 if [[ $# -lt 1 || $# -gt 2 ]]; then
   usage
   exit 1
@@ -63,7 +89,8 @@ fi
 # --- CI green gate (blocks on pending/failure, warns on unavailable) ---
 echo "Checking CI status on HEAD ($HEAD_SHA)..."
 if command -v gh >/dev/null 2>&1; then
-  CI_STATUS="$(gh api "repos/$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || echo 'zeroclaw-labs/zeroclaw')/commits/${HEAD_SHA}/check-runs" \
+  ORIGIN_REPO="$(detect_origin_repo)"
+  CI_STATUS="$(gh api "repos/${ORIGIN_REPO:-nauron-ai/labaclaw}/commits/${HEAD_SHA}/check-runs" \
     --jq '[.check_runs[] | select(.name == "CI Required Gate")] |
            if length == 0 then "not_found"
            elif .[0].conclusion == "success" then "success"
@@ -119,7 +146,7 @@ if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; the
   exit 1
 fi
 
-MESSAGE="zeroclaw $TAG"
+MESSAGE="labaclaw $TAG"
 git tag -a "$TAG" -m "$MESSAGE"
 echo "Created annotated tag: $TAG"
 

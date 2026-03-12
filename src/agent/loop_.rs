@@ -306,8 +306,16 @@ pub(crate) fn scrub_credentials(input: &str) -> String {
                 .map(|m| m.as_str())
                 .unwrap_or("");
 
-            // Preserve first 4 chars for context, then redact
-            let prefix = if val.len() > 4 { &val[..4] } else { "" };
+            // Preserve first 4 chars for context without slicing through
+            // a multi-byte UTF-8 sequence.
+            let prefix = if val.len() > 4 {
+                val.char_indices()
+                    .nth(4)
+                    .map(|(byte_idx, _)| &val[..byte_idx])
+                    .unwrap_or(val)
+            } else {
+                ""
+            };
 
             if full_match.contains(':') {
                 if full_match.contains('"') {
@@ -7385,6 +7393,13 @@ Let me check the result."#;
         let input = r#"api_key="short""#;
         let result = scrub_credentials(input);
         assert_eq!(result, input, "short values should not be redacted");
+    }
+
+    #[test]
+    fn scrub_credentials_handles_multibyte_prefixes() {
+        let input = r#"secret="让我们查看凭证12345678""#;
+        let result = scrub_credentials(input);
+        assert!(result.contains(r#"secret="让我们查*[REDACTED]""#));
     }
 
     // ─────────────────────────────────────────────────────────────────────

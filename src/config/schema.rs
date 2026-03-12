@@ -21,6 +21,26 @@ use tokio::io::AsyncWriteExt;
 /// model ID will be normalized by the provider layer.
 pub const DEFAULT_MODEL_FALLBACK: &str = "anthropic/claude-sonnet-4.6";
 
+fn default_config_temperature() -> f64 {
+    0.7
+}
+
+fn validate_config_temperature(value: f64) -> std::result::Result<f64, &'static str> {
+    if (0.0..=2.0).contains(&value) {
+        Ok(value)
+    } else {
+        Err("default_temperature must be between 0.0 and 2.0")
+    }
+}
+
+fn deserialize_config_temperature<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let temperature = f64::deserialize(deserializer)?;
+    validate_config_temperature(temperature).map_err(serde::de::Error::custom)
+}
+
 fn canonical_provider_for_model_defaults(provider_name: &str) -> String {
     if let Some(canonical) = canonical_china_provider_name(provider_name) {
         return if canonical == "doubao" {
@@ -245,6 +265,11 @@ pub struct Config {
     #[serde(default)]
     pub provider: ProviderConfig,
     /// Default model temperature (0.0–2.0). Default: `0.7`.
+    #[serde(
+        default = "default_config_temperature",
+        deserialize_with = "deserialize_config_temperature"
+    )]
+    #[schemars(range(min = 0.0, max = 2.0))]
     pub default_temperature: f64,
 
     /// Observability backend configuration (`[observability]`).
@@ -8195,6 +8220,8 @@ impl Config {
             acp.validate()?;
         }
 
+        validate_config_temperature(self.default_temperature).map_err(anyhow::Error::msg)?;
+
         // Gateway
         if self.gateway.host.trim().is_empty() {
             anyhow::bail!("gateway.host must not be empty");
@@ -9161,9 +9188,12 @@ impl Config {
         // Temperature: LABACLAW_TEMPERATURE
         if let Some(temp_str) = env_value_any(&["LABACLAW_TEMPERATURE"]) {
             if let Ok(temp) = temp_str.parse::<f64>() {
-                if (0.0..=2.0).contains(&temp) {
-                    self.default_temperature = temp;
-                }
+                self.default_temperature = temp;
+            } else {
+                tracing::warn!(
+                    value = %temp_str,
+                    "Ignoring invalid LABACLAW_TEMPERATURE override: expected a number"
+                );
             }
         }
 
@@ -9941,6 +9971,19 @@ mod tests {
     }
 
     #[test]
+    async fn config_validate_rejects_out_of_range_temperature() {
+        let mut config = Config::default();
+        config.default_temperature = 3.0;
+
+        let err = config
+            .validate()
+            .expect_err("out-of-range default_temperature should fail validation");
+        assert!(err
+            .to_string()
+            .contains("default_temperature must be between 0.0 and 2.0"));
+    }
+
+    #[test]
     async fn wasm_config_default_has_correct_values() {
         let cfg = WasmConfig::default();
         assert!(cfg.enabled, "WASM tools should be enabled by default");
@@ -10105,6 +10148,19 @@ mod tests {
         assert!(properties.contains_key("channels_config"));
         assert!(!properties.contains_key("workspace_dir"));
         assert!(!properties.contains_key("config_path"));
+
+        let default_temperature = properties
+            .get("default_temperature")
+            .and_then(serde_json::Value::as_object)
+            .expect("schema should expose default_temperature constraints");
+        assert_eq!(
+            default_temperature.get("minimum"),
+            Some(&serde_json::json!(0.0))
+        );
+        assert_eq!(
+            default_temperature.get("maximum"),
+            Some(&serde_json::json!(2.0))
+        );
 
         assert!(
             schema_json
@@ -13925,21 +13981,22 @@ default_model = "legacy-model"
     }
 
     #[test]
-    async fn env_override_temperature_out_of_range_ignored() {
+    async fn env_override_temperature_out_of_range_fails_validation() {
         let _env_guard = env_override_lock().await;
-        // Clean up any leftover env vars from other tests
         std::env::remove_var("LABACLAW_TEMPERATURE");
 
         let mut config = Config::default();
-        let original_temp = config.default_temperature;
 
-        // Temperature > 2.0 should be ignored
         std::env::set_var("LABACLAW_TEMPERATURE", "3.0");
         config.apply_env_overrides();
-        assert!(
-            (config.default_temperature - original_temp).abs() < f64::EPSILON,
-            "Temperature 3.0 should be ignored (out of range)"
-        );
+        assert!((config.default_temperature - 3.0).abs() < f64::EPSILON);
+
+        let err = config
+            .validate()
+            .expect_err("out-of-range env override should fail validation");
+        assert!(err
+            .to_string()
+            .contains("default_temperature must be between 0.0 and 2.0"));
 
         std::env::remove_var("LABACLAW_TEMPERATURE");
     }
