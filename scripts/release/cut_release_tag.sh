@@ -90,7 +90,7 @@ fi
 echo "Checking CI status on HEAD ($HEAD_SHA)..."
 if command -v gh >/dev/null 2>&1; then
   ORIGIN_REPO="$(detect_origin_repo)"
-  CI_STATUS="$(gh api "repos/${ORIGIN_REPO:-zeroclaw-labs/zeroclaw}/commits/${HEAD_SHA}/check-runs" \
+  CI_STATUS="$(gh api "repos/${ORIGIN_REPO:-nauron-ai/labaclaw}/commits/${HEAD_SHA}/check-runs" \
     --jq '[.check_runs[] | select(.name == "CI Required Gate")] |
            if length == 0 then "not_found"
            elif .[0].conclusion == "success" then "success"
@@ -146,7 +146,7 @@ if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; the
   exit 1
 fi
 
-MESSAGE="zeroclaw $TAG"
+MESSAGE="labaclaw $TAG"
 git tag -a "$TAG" -m "$MESSAGE"
 echo "Created annotated tag: $TAG"
 

@@ -125,13 +125,13 @@ fn default_true() -> bool {
     true
 }
 fn default_imap_id_name() -> String {
-    "zeroclaw".into()
+    "labaclaw".into()
 }
 fn default_imap_id_version() -> String {
     env!("CARGO_PKG_VERSION").into()
 }
 fn default_imap_id_vendor() -> String {
-    "zeroclaw-labs".into()
+    "nauron-ai".into()
 }
 
 impl Default for EmailConfig {
@@ -700,9 +700,9 @@ mod tests {
         assert_eq!(config.idle_timeout_secs, 1740);
         assert!(config.allowed_senders.is_empty());
         assert!(config.imap_id.enabled);
-        assert_eq!(config.imap_id.name, "zeroclaw");
+        assert_eq!(config.imap_id.name, "labaclaw");
         assert_eq!(config.imap_id.version, env!("CARGO_PKG_VERSION"));
-        assert_eq!(config.imap_id.vendor, "zeroclaw-labs");
+        assert_eq!(config.imap_id.vendor, "nauron-ai");
     }
 
     #[test]
@@ -1013,7 +1013,7 @@ mod tests {
         assert!(config.smtp_tls); // default
         assert_eq!(config.idle_timeout_secs, 1740); // default
         assert!(config.imap_id.enabled); // default
-        assert_eq!(config.imap_id.name, "zeroclaw"); // default
+        assert_eq!(config.imap_id.name, "labaclaw"); // default
     }
 
     #[test]
@@ -1066,8 +1066,8 @@ mod tests {
 
         let config: EmailConfig = serde_json::from_str(json).unwrap();
         assert!(config.imap_id.enabled);
-        assert_eq!(config.imap_id.name, "zeroclaw");
-        assert_eq!(config.imap_id.vendor, "zeroclaw-labs");
+        assert_eq!(config.imap_id.name, "labaclaw");
+        assert_eq!(config.imap_id.vendor, "nauron-ai");
     }
 
     #[test]
