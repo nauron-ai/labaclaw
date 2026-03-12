@@ -246,6 +246,7 @@ struct ChannelRuntimeDefaults {
     temperature: f64,
     api_key: Option<String>,
     api_url: Option<String>,
+    provider_timeout_secs: u64,
     reliability: crate::config::ReliabilityConfig,
     cost: crate::config::CostConfig,
     auto_save_memory: bool,
@@ -284,6 +285,7 @@ impl Default for RuntimeSemanticGuardState {
 #[derive(Debug, Clone)]
 struct RuntimeConfigState {
     defaults: ChannelRuntimeDefaults,
+    tool_call_dedup_exempt: Vec<String>,
     perplexity_filter: crate::config::PerplexityFilterConfig,
     outbound_leak_guard: crate::config::OutboundLeakGuardConfig,
     canary_tokens: bool,
@@ -298,6 +300,7 @@ struct RuntimeAutonomyPolicy {
     always_ask: Vec<String>,
     command_context_rules: Vec<crate::config::CommandContextRuleConfig>,
     non_cli_excluded_tools: Vec<String>,
+    tool_call_dedup_exempt: Vec<String>,
     non_cli_approval_approvers: Vec<String>,
     non_cli_natural_language_approval_mode: NonCliNaturalLanguageApprovalMode,
     non_cli_natural_language_approval_mode_by_channel:
@@ -1143,6 +1146,7 @@ fn runtime_defaults_from_config(config: &Config) -> ChannelRuntimeDefaults {
         temperature: config.default_temperature,
         api_key: config.api_key.clone(),
         api_url: config.api_url.clone(),
+        provider_timeout_secs: config.provider_timeout_secs,
         reliability: config.reliability.clone(),
         cost: config.cost.clone(),
         auto_save_memory: config.memory.auto_save,
@@ -1170,6 +1174,7 @@ fn runtime_autonomy_policy_from_config(config: &Config) -> RuntimeAutonomyPolicy
         always_ask: config.autonomy.always_ask.clone(),
         command_context_rules: config.autonomy.command_context_rules.clone(),
         non_cli_excluded_tools: config.autonomy.non_cli_excluded_tools.clone(),
+        tool_call_dedup_exempt: config.agent.tool_call_dedup_exempt.clone(),
         non_cli_approval_approvers: config.autonomy.non_cli_approval_approvers.clone(),
         non_cli_natural_language_approval_mode: config
             .autonomy
@@ -1209,6 +1214,10 @@ fn runtime_defaults_snapshot(ctx: &ChannelRuntimeContext) -> ChannelRuntimeDefau
         temperature: ctx.temperature,
         api_key: ctx.api_key.clone(),
         api_url: ctx.api_url.clone(),
+        provider_timeout_secs: ctx
+            .provider_runtime_options
+            .provider_timeout_secs
+            .unwrap_or(120),
         reliability: (*ctx.reliability).clone(),
         cost: crate::config::CostConfig::default(),
         auto_save_memory: ctx.auto_save_memory,
@@ -1220,6 +1229,27 @@ fn runtime_defaults_snapshot(ctx: &ChannelRuntimeContext) -> ChannelRuntimeDefau
         query_classification: ctx.query_classification.clone(),
         model_routes: ctx.model_routes.clone(),
     }
+}
+
+fn runtime_tool_call_dedup_exempt_snapshot(ctx: &ChannelRuntimeContext) -> Vec<String> {
+    if let Some(config_path) = runtime_config_path(ctx) {
+        let store = runtime_config_store()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some(state) = store.get(&config_path) {
+            return state.tool_call_dedup_exempt.clone();
+        }
+    }
+
+    ctx.tool_call_dedup_exempt.as_ref().clone()
+}
+
+fn runtime_provider_runtime_options_snapshot(
+    ctx: &ChannelRuntimeContext,
+) -> providers::ProviderRuntimeOptions {
+    let mut options = ctx.provider_runtime_options.clone();
+    options.provider_timeout_secs = Some(runtime_defaults_snapshot(ctx).provider_timeout_secs);
+    options
 }
 
 /// Return a snapshot of the runtime perplexity-filter config, falling back to
@@ -1821,12 +1851,14 @@ async fn maybe_apply_runtime_config_update(ctx: &ChannelRuntimeContext) -> Resul
 
     let (next_defaults, next_autonomy_policy) =
         load_runtime_defaults_from_config_file(&config_path).await?;
+    let mut next_provider_runtime_options = ctx.provider_runtime_options.clone();
+    next_provider_runtime_options.provider_timeout_secs = Some(next_defaults.provider_timeout_secs);
     let next_default_provider = providers::create_resilient_provider_with_options(
         &next_defaults.default_provider,
         next_defaults.api_key.as_deref(),
         next_defaults.api_url.as_deref(),
         &next_defaults.reliability,
-        &ctx.provider_runtime_options,
+        &next_provider_runtime_options,
     )?;
     let next_default_provider: Arc<dyn Provider> = Arc::from(next_default_provider);
 
@@ -1854,6 +1886,7 @@ async fn maybe_apply_runtime_config_update(ctx: &ChannelRuntimeContext) -> Resul
             config_path.clone(),
             RuntimeConfigState {
                 defaults: next_defaults.clone(),
+                tool_call_dedup_exempt: next_autonomy_policy.tool_call_dedup_exempt.clone(),
                 perplexity_filter: next_autonomy_policy.perplexity_filter.clone(),
                 outbound_leak_guard: next_autonomy_policy.outbound_leak_guard.clone(),
                 canary_tokens: next_autonomy_policy.canary_tokens,
@@ -1896,6 +1929,7 @@ async fn maybe_apply_runtime_config_update(ctx: &ChannelRuntimeContext) -> Resul
             next_autonomy_policy.non_cli_natural_language_approval_mode
         ),
         non_cli_excluded_tools_count = next_autonomy_policy.non_cli_excluded_tools.len(),
+        tool_call_dedup_exempt_count = next_autonomy_policy.tool_call_dedup_exempt.len(),
         perplexity_filter_enabled = next_autonomy_policy.perplexity_filter.enable_perplexity_filter,
         perplexity_threshold = next_autonomy_policy.perplexity_filter.perplexity_threshold,
         outbound_leak_guard_enabled = next_autonomy_policy.outbound_leak_guard.enabled,
@@ -2173,7 +2207,7 @@ async fn get_or_create_provider(
         defaults.api_key.clone(),
         api_url.map(ToString::to_string),
         defaults.reliability.clone(),
-        ctx.provider_runtime_options.clone(),
+        runtime_provider_runtime_options_snapshot(ctx),
     )
     .await?;
     let provider: Arc<dyn Provider> = Arc::from(provider);
@@ -4093,7 +4127,7 @@ If this input is legitimate, rephrase the request and avoid instruction-override
             crate::agent::loop_::scope_cost_enforcement_context(
                 cost_enforcement_context,
                 crate::agent::loop_::scope_tool_call_dedup_exempt(
-                    ctx.tool_call_dedup_exempt.as_ref().clone(),
+                    runtime_tool_call_dedup_exempt_snapshot(ctx.as_ref()),
                     run_tool_call_loop_with_non_cli_approval_context(
                         active_provider.as_ref(),
                         &mut history,
@@ -5804,20 +5838,7 @@ pub async fn start_channels(config: Config) -> Result<()> {
 
     let provider_name = resolved_default_provider(&config);
     let model = resolved_default_model(&config);
-    let provider_runtime_options = providers::ProviderRuntimeOptions {
-        auth_profile_override: None,
-        provider_api_url: config.api_url.clone(),
-        provider_transport: config.effective_provider_transport(),
-        labaclaw_dir: config.config_path.parent().map(std::path::PathBuf::from),
-        secrets_encrypt: config.secrets.encrypt,
-        reasoning_enabled: config.runtime.reasoning_enabled,
-        reasoning_level: config.effective_provider_reasoning_level(),
-        custom_provider_api_mode: config.provider_api.map(|mode| mode.as_compatible_mode()),
-        custom_provider_auth_header: config.effective_custom_provider_auth_header(),
-        max_tokens_override: None,
-        model_support_vision: config.model_support_vision,
-        provider_timeout_secs: Some(config.provider_timeout_secs),
-    };
+    let provider_runtime_options = providers::runtime_options_from_config(&config);
     let provider: Arc<dyn Provider> = Arc::from(
         create_routed_provider_nonblocking(
             &provider_name,
@@ -5847,6 +5868,7 @@ pub async fn start_channels(config: Config) -> Result<()> {
             config.config_path.clone(),
             RuntimeConfigState {
                 defaults: runtime_defaults_from_config(&config),
+                tool_call_dedup_exempt: config.agent.tool_call_dedup_exempt.clone(),
                 perplexity_filter: config.security.perplexity_filter.clone(),
                 outbound_leak_guard: config.security.outbound_leak_guard.clone(),
                 canary_tokens: config.security.canary_tokens,
@@ -10069,6 +10091,7 @@ BTC is currently around $65,000 based on latest tool output."#
                         temperature: 0.5,
                         api_key: None,
                         api_url: None,
+                        provider_timeout_secs: 120,
                         reliability: crate::config::ReliabilityConfig::default(),
                         cost: crate::config::CostConfig::default(),
                         auto_save_memory: false,
@@ -10080,6 +10103,7 @@ BTC is currently around $65,000 based on latest tool output."#
                         query_classification: crate::config::QueryClassificationConfig::default(),
                         model_routes: Vec::new(),
                     },
+                    tool_call_dedup_exempt: Vec::new(),
                     perplexity_filter: crate::config::PerplexityFilterConfig::default(),
                     outbound_leak_guard: crate::config::OutboundLeakGuardConfig::default(),
                     canary_tokens: true,
@@ -10177,9 +10201,11 @@ BTC is currently around $65,000 based on latest tool output."#
         cfg.workspace_dir = workspace_dir;
         cfg.default_provider = Some("test-provider".to_string());
         cfg.default_model = Some("test-model".to_string());
+        cfg.provider_timeout_secs = 95;
         cfg.autonomy.auto_approve = vec!["mock_price".to_string()];
         cfg.autonomy.always_ask = vec!["shell".to_string()];
         cfg.autonomy.non_cli_excluded_tools = vec!["browser_open".to_string()];
+        cfg.agent.tool_call_dedup_exempt = vec!["mock_price".to_string()];
         cfg.autonomy.non_cli_approval_approvers = vec!["telegram:alice".to_string()];
         cfg.autonomy.non_cli_natural_language_approval_mode =
             crate::config::NonCliNaturalLanguageApprovalMode::Direct;
@@ -10200,15 +10226,20 @@ BTC is currently around $65,000 based on latest tool output."#
         cfg.memory.qdrant.url = Some("http://127.0.0.1:6333".to_string());
         cfg.save().await.expect("save config");
 
-        let (_defaults, policy) = load_runtime_defaults_from_config_file(&config_path)
+        let (defaults, policy) = load_runtime_defaults_from_config_file(&config_path)
             .await
             .expect("load runtime state");
 
+        assert_eq!(defaults.provider_timeout_secs, 95);
         assert_eq!(policy.auto_approve, vec!["mock_price".to_string()]);
         assert_eq!(policy.always_ask, vec!["shell".to_string()]);
         assert_eq!(
             policy.non_cli_excluded_tools,
             vec!["browser_open".to_string()]
+        );
+        assert_eq!(
+            policy.tool_call_dedup_exempt,
+            vec!["mock_price".to_string()]
         );
         assert_eq!(
             policy.non_cli_approval_approvers,
@@ -10276,9 +10307,11 @@ BTC is currently around $65,000 based on latest tool output."#
         cfg.default_provider = Some("ollama".to_string());
         cfg.default_model = Some("llama3.2".to_string());
         cfg.api_key = Some("http://127.0.0.1:11434".to_string());
+        cfg.provider_timeout_secs = 45;
         cfg.memory.auto_save = false;
         cfg.memory.min_relevance_score = 0.15;
         cfg.agent.max_tool_iterations = 5;
+        cfg.agent.tool_call_dedup_exempt = vec!["mock_price".to_string()];
         cfg.channels_config.message_timeout_secs = 45;
         cfg.multimodal.allow_remote_fetch = false;
         cfg.query_classification.enabled = false;
@@ -10345,6 +10378,14 @@ BTC is currently around $65,000 based on latest tool output."#
             snapshot_non_cli_excluded_tools(runtime_ctx.as_ref()),
             vec!["shell".to_string()]
         );
+        assert_eq!(
+            runtime_tool_call_dedup_exempt_snapshot(runtime_ctx.as_ref()),
+            vec!["mock_price".to_string()]
+        );
+        assert_eq!(
+            runtime_provider_runtime_options_snapshot(runtime_ctx.as_ref()).provider_timeout_secs,
+            Some(45)
+        );
         assert!(!runtime_perplexity_filter_snapshot(runtime_ctx.as_ref()).enable_perplexity_filter);
         assert_eq!(
             runtime_outbound_leak_guard_snapshot(runtime_ctx.as_ref()).action,
@@ -10381,6 +10422,8 @@ BTC is currently around $65,000 based on latest tool output."#
         cfg.memory.auto_save = true;
         cfg.memory.min_relevance_score = 0.65;
         cfg.agent.max_tool_iterations = 11;
+        cfg.agent.tool_call_dedup_exempt = vec!["browser_open".to_string()];
+        cfg.provider_timeout_secs = 180;
         cfg.channels_config.message_timeout_secs = 120;
         cfg.multimodal.allow_remote_fetch = true;
         cfg.query_classification.enabled = true;
@@ -10421,6 +10464,14 @@ BTC is currently around $65,000 based on latest tool output."#
         assert_eq!(
             snapshot_non_cli_excluded_tools(runtime_ctx.as_ref()),
             vec!["browser_open".to_string(), "mock_price".to_string()]
+        );
+        assert_eq!(
+            runtime_tool_call_dedup_exempt_snapshot(runtime_ctx.as_ref()),
+            vec!["browser_open".to_string()]
+        );
+        assert_eq!(
+            runtime_provider_runtime_options_snapshot(runtime_ctx.as_ref()).provider_timeout_secs,
+            Some(180)
         );
         let perplexity_cfg = runtime_perplexity_filter_snapshot(runtime_ctx.as_ref());
         assert!(perplexity_cfg.enable_perplexity_filter);

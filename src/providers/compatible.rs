@@ -27,6 +27,9 @@ use tokio_tungstenite::{
     },
 };
 
+/// Default HTTP request timeout for provider API calls (seconds).
+const DEFAULT_PROVIDER_TIMEOUT_SECS: u64 = 120;
+
 /// A provider that speaks the OpenAI-compatible chat completions API.
 /// Used by: Venice, Vercel AI Gateway, Cloudflare AI Gateway, Moonshot,
 /// Synthetic, `OpenCode` Zen, `Z.AI`, `GLM`, `MiniMax`, Bedrock, Qianfan, Groq, Mistral, `xAI`, etc.
@@ -258,7 +261,7 @@ impl OpenAiCompatibleProvider {
             native_tool_calling: !merge_system_into_user,
             api_mode,
             max_tokens_override: max_tokens_override.filter(|value| *value > 0),
-            timeout_secs: 120,
+            timeout_secs: DEFAULT_PROVIDER_TIMEOUT_SECS,
         }
     }
 

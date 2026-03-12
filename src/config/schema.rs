@@ -31,6 +31,28 @@ fn default_provider_timeout_secs() -> u64 {
     DEFAULT_PROVIDER_TIMEOUT_SECS
 }
 
+pub(crate) fn provider_timeout_env_override() -> Option<u64> {
+    for key in [
+        "LABACLAW_PROVIDER_TIMEOUT_SECS",
+        "ZEROCLAW_PROVIDER_TIMEOUT_SECS",
+    ] {
+        let Ok(value) = std::env::var(key) else {
+            continue;
+        };
+        let Ok(timeout_secs) = value.trim().parse::<u64>() else {
+            continue;
+        };
+        if timeout_secs > 0 {
+            return Some(timeout_secs);
+        }
+    }
+    None
+}
+
+pub(crate) fn resolved_provider_timeout_secs() -> u64 {
+    provider_timeout_env_override().unwrap_or_else(default_provider_timeout_secs)
+}
+
 fn validate_config_temperature(value: f64) -> std::result::Result<f64, &'static str> {
     if (0.0..=2.0).contains(&value) {
         Ok(value)
@@ -8235,6 +8257,9 @@ impl Config {
         }
 
         validate_config_temperature(self.default_temperature).map_err(anyhow::Error::msg)?;
+        if self.provider_timeout_secs == 0 {
+            anyhow::bail!("provider_timeout_secs must be greater than 0");
+        }
 
         // Gateway
         if self.gateway.host.trim().is_empty() {
@@ -8511,6 +8536,11 @@ impl Config {
         }
         for (i, tool_name) in self.agent.tool_call_dedup_exempt.iter().enumerate() {
             let normalized = tool_name.trim();
+            if normalized != tool_name {
+                anyhow::bail!(
+                    "agent.tool_call_dedup_exempt[{i}] must not include leading or trailing whitespace"
+                );
+            }
             if normalized.is_empty() {
                 anyhow::bail!("agent.tool_call_dedup_exempt[{i}] must not be empty");
             }
@@ -9126,12 +9156,8 @@ impl Config {
             self.default_model = Some(model);
         }
 
-        if let Ok(timeout_secs) = std::env::var("ZEROCLAW_PROVIDER_TIMEOUT_SECS") {
-            if let Ok(timeout_secs) = timeout_secs.parse::<u64>() {
-                if timeout_secs > 0 {
-                    self.provider_timeout_secs = timeout_secs;
-                }
-            }
+        if let Some(timeout_secs) = provider_timeout_env_override() {
+            self.provider_timeout_secs = timeout_secs;
         }
 
         // Apply named provider profile remapping (Codex app-server compatibility).
@@ -10679,6 +10705,7 @@ ws_url = "ws://127.0.0.1:3002"
         assert_eq!(parsed.default_provider, config.default_provider);
         assert_eq!(parsed.default_model, config.default_model);
         assert!((parsed.default_temperature - config.default_temperature).abs() < f64::EPSILON);
+        assert_eq!(parsed.provider_timeout_secs, config.provider_timeout_secs);
         assert_eq!(parsed.observability.backend, "log");
         assert_eq!(parsed.observability.runtime_trace_mode, "none");
         assert_eq!(parsed.autonomy.level, AutonomyLevel::Full);
@@ -11075,6 +11102,7 @@ denied_tools = ["shell"]
         assert_eq!(decrypted, "sk-roundtrip");
         assert_eq!(loaded.default_model.as_deref(), Some("test-model"));
         assert!((loaded.default_temperature - 0.9).abs() < f64::EPSILON);
+        assert_eq!(loaded.provider_timeout_secs, 120);
 
         let _ = fs::remove_dir_all(&dir).await;
     }
@@ -12507,6 +12535,28 @@ default_temperature = 0.7
             .contains("web_search.retries_per_provider"));
     }
 
+    #[test]
+    async fn config_validate_rejects_zero_provider_timeout() {
+        let mut config = Config::default();
+        config.provider_timeout_secs = 0;
+
+        let error = config
+            .validate()
+            .expect_err("expected provider_timeout_secs validation failure");
+        assert!(error.to_string().contains("provider_timeout_secs"));
+    }
+
+    #[test]
+    async fn config_validate_rejects_tool_call_dedup_exempt_whitespace() {
+        let mut config = Config::default();
+        config.agent.tool_call_dedup_exempt = vec![" shell ".to_string()];
+
+        let error = config
+            .validate()
+            .expect_err("expected tool_call_dedup_exempt whitespace validation failure");
+        assert!(error.to_string().contains("agent.tool_call_dedup_exempt"));
+    }
+
     // ── Environment variable overrides (Docker support) ─────────
 
     async fn env_override_lock() -> MutexGuard<'static, ()> {
@@ -12614,6 +12664,40 @@ default_temperature = 0.7
         assert_eq!(config.default_provider.as_deref(), Some("openai-codex"));
 
         std::env::remove_var("LABACLAW_MODEL_PROVIDER");
+    }
+
+    #[test]
+    async fn env_override_provider_timeout_prefers_labaclaw_then_zeroclaw() {
+        let _env_guard = env_override_lock().await;
+        let mut config = Config::default();
+        config.provider_timeout_secs = 120;
+
+        std::env::set_var("ZEROCLAW_PROVIDER_TIMEOUT_SECS", "90");
+        std::env::set_var("LABACLAW_PROVIDER_TIMEOUT_SECS", "45");
+        config.apply_env_overrides();
+        assert_eq!(config.provider_timeout_secs, 45);
+
+        std::env::remove_var("LABACLAW_PROVIDER_TIMEOUT_SECS");
+        config.provider_timeout_secs = 120;
+        config.apply_env_overrides();
+        assert_eq!(config.provider_timeout_secs, 90);
+
+        std::env::remove_var("ZEROCLAW_PROVIDER_TIMEOUT_SECS");
+    }
+
+    #[test]
+    async fn env_override_provider_timeout_ignores_invalid_labaclaw_value() {
+        let _env_guard = env_override_lock().await;
+        let mut config = Config::default();
+        config.provider_timeout_secs = 120;
+
+        std::env::set_var("LABACLAW_PROVIDER_TIMEOUT_SECS", "not-a-number");
+        std::env::set_var("ZEROCLAW_PROVIDER_TIMEOUT_SECS", "75");
+        config.apply_env_overrides();
+        assert_eq!(config.provider_timeout_secs, 75);
+
+        std::env::remove_var("LABACLAW_PROVIDER_TIMEOUT_SECS");
+        std::env::remove_var("ZEROCLAW_PROVIDER_TIMEOUT_SECS");
     }
 
     #[test]

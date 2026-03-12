@@ -767,6 +767,23 @@ impl Default for ProviderRuntimeOptions {
     }
 }
 
+pub fn runtime_options_from_config(config: &crate::config::Config) -> ProviderRuntimeOptions {
+    ProviderRuntimeOptions {
+        auth_profile_override: None,
+        provider_api_url: config.api_url.clone(),
+        provider_transport: config.effective_provider_transport(),
+        labaclaw_dir: config.config_path.parent().map(std::path::PathBuf::from),
+        secrets_encrypt: config.secrets.encrypt,
+        reasoning_enabled: config.runtime.reasoning_enabled,
+        reasoning_level: config.effective_provider_reasoning_level(),
+        custom_provider_api_mode: config.provider_api.map(|mode| mode.as_compatible_mode()),
+        custom_provider_auth_header: config.effective_custom_provider_auth_header(),
+        max_tokens_override: None,
+        model_support_vision: config.model_support_vision,
+        provider_timeout_secs: Some(config.provider_timeout_secs),
+    }
+}
+
 fn is_secret_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':')
 }
@@ -1308,22 +1325,36 @@ fn create_provider_with_url_and_options(
         }
         // ── Primary providers (custom implementations) ───────
         "openrouter" => Ok(Box::new(
-            openrouter::OpenRouterProvider::new_with_max_tokens(key, options.max_tokens_override),
+            openrouter::OpenRouterProvider::new_with_max_tokens_and_timeout(
+                key,
+                options.max_tokens_override,
+                options.provider_timeout_secs,
+            ),
         )),
-        "anthropic" => Ok(Box::new(anthropic::AnthropicProvider::new(key))),
+        "anthropic" => Ok(Box::new(
+            anthropic::AnthropicProvider::with_base_url_and_timeout(
+                key,
+                None,
+                options.provider_timeout_secs,
+            ),
+        )),
         "openai" => Ok(Box::new(
-            openai::OpenAiProvider::with_base_url_and_max_tokens(
+            openai::OpenAiProvider::with_base_url_and_max_tokens_and_timeout(
                 api_url,
                 key,
                 options.max_tokens_override,
+                options.provider_timeout_secs,
             ),
         )),
         // Ollama uses api_url for custom base URL (e.g. remote Ollama instance)
-        "ollama" => Ok(Box::new(ollama::OllamaProvider::new_with_reasoning(
-            api_url,
-            key,
-            options.reasoning_enabled,
-        ))),
+        "ollama" => Ok(Box::new(
+            ollama::OllamaProvider::new_with_reasoning_and_timeout(
+                api_url,
+                key,
+                options.reasoning_enabled,
+                options.provider_timeout_secs,
+            ),
+        )),
         "gemini" | "google" | "google-gemini" => {
             let state_dir = options.labaclaw_dir.clone().unwrap_or_else(|| {
                 directories::UserDirs::new().map_or_else(
@@ -1332,13 +1363,17 @@ fn create_provider_with_url_and_options(
                 )
             });
             let auth_service = AuthService::new(&state_dir, options.secrets_encrypt);
-            Ok(Box::new(gemini::GeminiProvider::new_with_auth(
+            Ok(Box::new(gemini::GeminiProvider::new_with_auth_and_timeout(
                 key,
                 auth_service,
                 options.auth_profile_override.clone(),
+                options.provider_timeout_secs,
             )))
         }
-        "telnyx" => Ok(Box::new(telnyx::TelnyxProvider::new(key))),
+        "telnyx" => Ok(Box::new(telnyx::TelnyxProvider::new_with_timeout(
+            key,
+            options.provider_timeout_secs,
+        ))),
 
         // ── OpenAI-compatible providers ──────────────────────
         "inception" => Ok(compat(OpenAiCompatibleProvider::new(
@@ -1657,10 +1692,14 @@ fn create_provider_with_url_and_options(
         ))),
 
         // ── Cloud AI endpoints ───────────────────────────────
-        "ovhcloud" | "ovh" => Ok(Box::new(openai::OpenAiProvider::with_base_url(
-            Some("https://oai.endpoints.kepler.ai.cloud.ovh.net/v1"),
-            key,
-        ))),
+        "ovhcloud" | "ovh" => Ok(Box::new(
+            openai::OpenAiProvider::with_base_url_and_max_tokens_and_timeout(
+                Some("https://oai.endpoints.kepler.ai.cloud.ovh.net/v1"),
+                key,
+                None,
+                options.provider_timeout_secs,
+            ),
+        )),
 
         // ── Bring Your Own Provider (custom URL) ───────────
         // Format: "custom:https://your-api.com" or "custom:http://localhost:1234"
@@ -1693,10 +1732,13 @@ fn create_provider_with_url_and_options(
                 "Anthropic-custom provider",
                 "anthropic-custom:https://your-api.com",
             )?;
-            Ok(Box::new(anthropic::AnthropicProvider::with_base_url(
-                key,
-                Some(&base_url),
-            )))
+            Ok(Box::new(
+                anthropic::AnthropicProvider::with_base_url_and_timeout(
+                    key,
+                    Some(&base_url),
+                    options.provider_timeout_secs,
+                ),
+            ))
         }
 
         _ => {

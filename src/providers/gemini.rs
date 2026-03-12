@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+const DEFAULT_PROVIDER_TIMEOUT_SECS: u64 = 120;
+
 /// Gemini provider supporting multiple authentication methods.
 pub struct GeminiProvider {
     auth: Option<GeminiAuth>,
@@ -27,6 +29,7 @@ pub struct GeminiProvider {
     auth_service: Option<AuthService>,
     /// Override profile name for managed auth.
     auth_profile_override: Option<String>,
+    timeout_secs: u64,
 }
 
 /// Mutable OAuth token state — supports runtime refresh for long-lived processes.
@@ -451,6 +454,10 @@ impl GeminiProvider {
     /// 3. `GOOGLE_API_KEY` environment variable
     /// 4. Gemini CLI OAuth tokens (`~/.gemini/oauth_creds.json`)
     pub fn new(api_key: Option<&str>) -> Self {
+        Self::new_with_timeout(api_key, None)
+    }
+
+    pub fn new_with_timeout(api_key: Option<&str>, timeout_secs: Option<u64>) -> Self {
         let oauth_cred_paths = Self::discover_oauth_cred_paths();
         let resolved_auth = api_key
             .and_then(Self::normalize_non_empty)
@@ -469,6 +476,7 @@ impl GeminiProvider {
             oauth_index: Arc::new(tokio::sync::Mutex::new(0)),
             auth_service: None,
             auth_profile_override: None,
+            timeout_secs: timeout_secs.unwrap_or(DEFAULT_PROVIDER_TIMEOUT_SECS),
         }
     }
 
@@ -484,6 +492,15 @@ impl GeminiProvider {
         api_key: Option<&str>,
         auth_service: AuthService,
         profile_override: Option<String>,
+    ) -> Self {
+        Self::new_with_auth_and_timeout(api_key, auth_service, profile_override, None)
+    }
+
+    pub fn new_with_auth_and_timeout(
+        api_key: Option<&str>,
+        auth_service: AuthService,
+        profile_override: Option<String>,
+        timeout_secs: Option<u64>,
     ) -> Self {
         let oauth_cred_paths = Self::discover_oauth_cred_paths();
 
@@ -542,6 +559,7 @@ impl GeminiProvider {
                 None
             },
             auth_profile_override: profile_override,
+            timeout_secs: timeout_secs.unwrap_or(DEFAULT_PROVIDER_TIMEOUT_SECS),
         }
     }
 
@@ -816,7 +834,11 @@ impl GeminiProvider {
     }
 
     fn http_client(&self) -> Client {
-        crate::config::build_runtime_proxy_client_with_timeouts("provider.gemini", 120, 10)
+        crate::config::build_runtime_proxy_client_with_timeouts(
+            "provider.gemini",
+            self.timeout_secs,
+            10,
+        )
     }
 
     /// Resolve the GCP project ID for OAuth by calling the loadCodeAssist endpoint.
@@ -1428,6 +1450,7 @@ mod tests {
             oauth_index: Arc::new(tokio::sync::Mutex::new(0)),
             auth_service: None,
             auth_profile_override: None,
+            timeout_secs: DEFAULT_PROVIDER_TIMEOUT_SECS,
         }
     }
 
@@ -2269,6 +2292,7 @@ mod tests {
             oauth_index: Arc::new(tokio::sync::Mutex::new(0)),
             auth_service: None, // Missing auth_service
             auth_profile_override: None,
+            timeout_secs: DEFAULT_PROVIDER_TIMEOUT_SECS,
         };
 
         let result = provider.warmup().await;
