@@ -10,35 +10,12 @@ Create an annotated release tag from the current checkout.
 Requirements:
 - tag must match vX.Y.Z (optional suffix like -rc.1)
 - working tree must be clean
-- HEAD must match origin/<default-branch>
+- HEAD must match origin/main
 - tag must not already exist locally or on origin
 
 Options:
   --push   Push the tag to origin after creating it
 USAGE
-}
-
-detect_origin_default_branch() {
-  local ref=""
-
-  ref="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
-  ref="${ref#origin/}"
-  if [[ -n "$ref" ]]; then
-    printf '%s\n' "$ref"
-    return 0
-  fi
-
-  if git rev-parse --verify origin/main >/dev/null 2>&1; then
-    printf 'main\n'
-    return 0
-  fi
-
-  if git rev-parse --verify origin/master >/dev/null 2>&1; then
-    printf 'master\n'
-    return 0
-  fi
-
-  return 1
 }
 
 detect_origin_repo() {
@@ -98,23 +75,14 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 1
 fi
 
-DEFAULT_BRANCH="$(detect_origin_default_branch || true)"
-if [[ -z "$DEFAULT_BRANCH" ]]; then
-  echo "error: could not determine origin default branch." >&2
-  echo "hint: ensure origin/HEAD, origin/main, or origin/master is available." >&2
-  exit 1
-fi
-
-REMOTE_REF="origin/$DEFAULT_BRANCH"
-
-echo "Fetching $REMOTE_REF and tags..."
-git fetch --quiet origin "$DEFAULT_BRANCH" --tags
+echo "Fetching origin/main and tags..."
+git fetch --quiet origin main --tags
 
 HEAD_SHA="$(git rev-parse HEAD)"
-DEFAULT_SHA="$(git rev-parse "$REMOTE_REF")"
-if [[ "$HEAD_SHA" != "$DEFAULT_SHA" ]]; then
-  echo "error: HEAD ($HEAD_SHA) is not $REMOTE_REF ($DEFAULT_SHA)." >&2
-  echo "hint: checkout/update $DEFAULT_BRANCH before cutting a release tag." >&2
+MAIN_SHA="$(git rev-parse origin/main)"
+if [[ "$HEAD_SHA" != "$MAIN_SHA" ]]; then
+  echo "error: HEAD ($HEAD_SHA) is not origin/main ($MAIN_SHA)." >&2
+  echo "hint: checkout/update main before cutting a release tag." >&2
   exit 1
 fi
 
@@ -139,7 +107,7 @@ if command -v gh >/dev/null 2>&1; then
       ;;
     not_found)
       echo "warning: CI Required Gate check-run not found for $HEAD_SHA." >&2
-      echo "hint: ensure ci-run.yml has completed on $DEFAULT_BRANCH before cutting a release tag." >&2
+      echo "hint: ensure ci-run.yml has completed on main before cutting a release tag." >&2
       ;;
     api_error)
       echo "warning: could not query GitHub API for CI status (gh CLI issue or auth)." >&2

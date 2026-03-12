@@ -38,27 +38,12 @@ def normalize_docs_files(raw: str) -> list[str]:
     return files
 
 
-def infer_origin_base_ref() -> str:
-    symbolic = run_git(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])
-    if symbolic.returncode == 0:
-        candidate = symbolic.stdout.strip()
-        if candidate:
-            return candidate
-
-    for candidate in ("origin/main", "origin/master"):
-        if run_git(["rev-parse", "--verify", candidate]).returncode == 0:
-            return candidate
-
-    return ""
-
-
 def infer_base_sha(provided: str) -> str:
     if commit_exists(provided):
         return provided
-    base_ref = infer_origin_base_ref()
-    if not base_ref:
+    if run_git(["rev-parse", "--verify", "origin/main"]).returncode != 0:
         return ""
-    proc = run_git(["merge-base", base_ref, "HEAD"])
+    proc = run_git(["merge-base", "origin/main", "HEAD"])
     candidate = proc.stdout.strip()
     return candidate if commit_exists(candidate) else ""
 
