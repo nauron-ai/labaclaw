@@ -630,7 +630,9 @@ pub fn all_tools_with_runtime(
             let trimmed_value = value.trim();
             (!trimmed_value.is_empty()).then(|| trimmed_value.to_owned())
         });
-        let provider_runtime_options = crate::providers::runtime_options_from_config(root_config);
+        let mut provider_runtime_options =
+            crate::providers::runtime_options_from_config(root_config);
+        provider_runtime_options.labaclaw_dir = Some(labaclaw_dir.clone());
         let runtime_config_path = Some(root_config.config_path.clone());
         let parent_tools = Arc::new(tool_arcs.clone());
         let load_tracker = AgentLoadTracker::new();

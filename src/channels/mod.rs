@@ -285,6 +285,7 @@ impl Default for RuntimeSemanticGuardState {
 #[derive(Debug, Clone)]
 struct RuntimeConfigState {
     defaults: ChannelRuntimeDefaults,
+    provider_runtime_options: providers::ProviderRuntimeOptions,
     tool_call_dedup_exempt: Vec<String>,
     perplexity_filter: crate::config::PerplexityFilterConfig,
     outbound_leak_guard: crate::config::OutboundLeakGuardConfig,
@@ -1247,9 +1248,16 @@ fn runtime_tool_call_dedup_exempt_snapshot(ctx: &ChannelRuntimeContext) -> Vec<S
 fn runtime_provider_runtime_options_snapshot(
     ctx: &ChannelRuntimeContext,
 ) -> providers::ProviderRuntimeOptions {
-    let mut options = ctx.provider_runtime_options.clone();
-    options.provider_timeout_secs = Some(runtime_defaults_snapshot(ctx).provider_timeout_secs);
-    options
+    if let Some(config_path) = runtime_config_path(ctx) {
+        let store = runtime_config_store()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some(state) = store.get(&config_path) {
+            return state.provider_runtime_options.clone();
+        }
+    }
+
+    ctx.provider_runtime_options.clone()
 }
 
 /// Return a snapshot of the runtime perplexity-filter config, falling back to
@@ -1458,7 +1466,11 @@ fn decrypt_optional_secret_for_runtime_reload(
 
 async fn load_runtime_defaults_from_config_file(
     path: &Path,
-) -> Result<(ChannelRuntimeDefaults, RuntimeAutonomyPolicy)> {
+) -> Result<(
+    ChannelRuntimeDefaults,
+    RuntimeAutonomyPolicy,
+    providers::ProviderRuntimeOptions,
+)> {
     let contents = tokio::fs::read_to_string(path)
         .await
         .with_context(|| format!("Failed to read {}", path.display()))?;
@@ -1481,6 +1493,7 @@ async fn load_runtime_defaults_from_config_file(
     Ok((
         runtime_defaults_from_config(&parsed),
         runtime_autonomy_policy_from_config(&parsed),
+        providers::runtime_options_from_config(&parsed),
     ))
 }
 
@@ -1849,10 +1862,8 @@ async fn maybe_apply_runtime_config_update(ctx: &ChannelRuntimeContext) -> Resul
         }
     }
 
-    let (next_defaults, next_autonomy_policy) =
+    let (next_defaults, next_autonomy_policy, next_provider_runtime_options) =
         load_runtime_defaults_from_config_file(&config_path).await?;
-    let mut next_provider_runtime_options = ctx.provider_runtime_options.clone();
-    next_provider_runtime_options.provider_timeout_secs = Some(next_defaults.provider_timeout_secs);
     let next_default_provider = providers::create_resilient_provider_with_options(
         &next_defaults.default_provider,
         next_defaults.api_key.as_deref(),
@@ -1886,6 +1897,7 @@ async fn maybe_apply_runtime_config_update(ctx: &ChannelRuntimeContext) -> Resul
             config_path.clone(),
             RuntimeConfigState {
                 defaults: next_defaults.clone(),
+                provider_runtime_options: next_provider_runtime_options.clone(),
                 tool_call_dedup_exempt: next_autonomy_policy.tool_call_dedup_exempt.clone(),
                 perplexity_filter: next_autonomy_policy.perplexity_filter.clone(),
                 outbound_leak_guard: next_autonomy_policy.outbound_leak_guard.clone(),
@@ -5868,6 +5880,7 @@ pub async fn start_channels(config: Config) -> Result<()> {
             config.config_path.clone(),
             RuntimeConfigState {
                 defaults: runtime_defaults_from_config(&config),
+                provider_runtime_options: provider_runtime_options.clone(),
                 tool_call_dedup_exempt: config.agent.tool_call_dedup_exempt.clone(),
                 perplexity_filter: config.security.perplexity_filter.clone(),
                 outbound_leak_guard: config.security.outbound_leak_guard.clone(),
@@ -10103,6 +10116,10 @@ BTC is currently around $65,000 based on latest tool output."#
                         query_classification: crate::config::QueryClassificationConfig::default(),
                         model_routes: Vec::new(),
                     },
+                    provider_runtime_options: providers::ProviderRuntimeOptions {
+                        labaclaw_dir: Some(temp.path().to_path_buf()),
+                        ..providers::ProviderRuntimeOptions::default()
+                    },
                     tool_call_dedup_exempt: Vec::new(),
                     perplexity_filter: crate::config::PerplexityFilterConfig::default(),
                     outbound_leak_guard: crate::config::OutboundLeakGuardConfig::default(),
@@ -10224,13 +10241,25 @@ BTC is currently around $65,000 based on latest tool output."#
         cfg.security.semantic_guard_collection = "semantic_guard_test".to_string();
         cfg.security.semantic_guard_threshold = 0.9;
         cfg.memory.qdrant.url = Some("http://127.0.0.1:6333".to_string());
+        cfg.api_url = Some("https://api.example.test/v1".to_string());
+        cfg.provider.transport = Some("sse".to_string());
+        cfg.runtime.reasoning_enabled = Some(false);
         cfg.save().await.expect("save config");
-
-        let (defaults, policy) = load_runtime_defaults_from_config_file(&config_path)
-            .await
-            .expect("load runtime state");
+        let (defaults, policy, provider_runtime_options) =
+            load_runtime_defaults_from_config_file(&config_path)
+                .await
+                .expect("load runtime state");
 
         assert_eq!(defaults.provider_timeout_secs, 95);
+        assert_eq!(
+            provider_runtime_options.provider_api_url.as_deref(),
+            Some("https://api.example.test/v1")
+        );
+        assert_eq!(
+            provider_runtime_options.provider_transport.as_deref(),
+            Some("sse")
+        );
+        assert_eq!(provider_runtime_options.reasoning_enabled, Some(false));
         assert_eq!(policy.auto_approve, vec!["mock_price".to_string()]);
         assert_eq!(policy.always_ask, vec!["shell".to_string()]);
         assert_eq!(
@@ -10287,9 +10316,10 @@ BTC is currently around $65,000 based on latest tool output."#
         cfg.default_model = None;
         cfg.save().await.expect("save config");
 
-        let (defaults, _policy) = load_runtime_defaults_from_config_file(&config_path)
-            .await
-            .expect("runtime defaults");
+        let (defaults, _policy, _provider_runtime_options) =
+            load_runtime_defaults_from_config_file(&config_path)
+                .await
+                .expect("runtime defaults");
         assert_eq!(defaults.default_provider, "openai");
         assert_eq!(defaults.model, "gpt-5.2");
     }
@@ -10314,6 +10344,9 @@ BTC is currently around $65,000 based on latest tool output."#
         cfg.agent.tool_call_dedup_exempt = vec!["mock_price".to_string()];
         cfg.channels_config.message_timeout_secs = 45;
         cfg.multimodal.allow_remote_fetch = false;
+        cfg.api_url = Some("https://api.initial.example/v1".to_string());
+        cfg.provider.transport = Some("sse".to_string());
+        cfg.runtime.reasoning_enabled = Some(false);
         cfg.query_classification.enabled = false;
         cfg.model_routes = vec![];
         cfg.autonomy.non_cli_natural_language_approval_mode =
@@ -10386,6 +10419,22 @@ BTC is currently around $65,000 based on latest tool output."#
             runtime_provider_runtime_options_snapshot(runtime_ctx.as_ref()).provider_timeout_secs,
             Some(45)
         );
+        assert_eq!(
+            runtime_provider_runtime_options_snapshot(runtime_ctx.as_ref())
+                .provider_api_url
+                .as_deref(),
+            Some("https://api.initial.example/v1")
+        );
+        assert_eq!(
+            runtime_provider_runtime_options_snapshot(runtime_ctx.as_ref())
+                .provider_transport
+                .as_deref(),
+            Some("sse")
+        );
+        assert_eq!(
+            runtime_provider_runtime_options_snapshot(runtime_ctx.as_ref()).reasoning_enabled,
+            Some(false)
+        );
         assert!(!runtime_perplexity_filter_snapshot(runtime_ctx.as_ref()).enable_perplexity_filter);
         assert_eq!(
             runtime_outbound_leak_guard_snapshot(runtime_ctx.as_ref()).action,
@@ -10424,6 +10473,9 @@ BTC is currently around $65,000 based on latest tool output."#
         cfg.agent.max_tool_iterations = 11;
         cfg.agent.tool_call_dedup_exempt = vec!["browser_open".to_string()];
         cfg.provider_timeout_secs = 180;
+        cfg.api_url = Some("https://api.updated.example/v1".to_string());
+        cfg.provider.transport = Some("websocket".to_string());
+        cfg.runtime.reasoning_enabled = Some(true);
         cfg.channels_config.message_timeout_secs = 120;
         cfg.multimodal.allow_remote_fetch = true;
         cfg.query_classification.enabled = true;
@@ -10472,6 +10524,22 @@ BTC is currently around $65,000 based on latest tool output."#
         assert_eq!(
             runtime_provider_runtime_options_snapshot(runtime_ctx.as_ref()).provider_timeout_secs,
             Some(180)
+        );
+        assert_eq!(
+            runtime_provider_runtime_options_snapshot(runtime_ctx.as_ref())
+                .provider_api_url
+                .as_deref(),
+            Some("https://api.updated.example/v1")
+        );
+        assert_eq!(
+            runtime_provider_runtime_options_snapshot(runtime_ctx.as_ref())
+                .provider_transport
+                .as_deref(),
+            Some("websocket")
+        );
+        assert_eq!(
+            runtime_provider_runtime_options_snapshot(runtime_ctx.as_ref()).reasoning_enabled,
+            Some(true)
         );
         let perplexity_cfg = runtime_perplexity_filter_snapshot(runtime_ctx.as_ref());
         assert!(perplexity_cfg.enable_perplexity_filter);

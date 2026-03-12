@@ -301,6 +301,7 @@ pub struct Config {
     pub default_temperature: f64,
     /// HTTP request timeout in seconds for LLM provider API calls. Default: `120`.
     #[serde(default = "default_provider_timeout_secs")]
+    #[schemars(range(min = 1))]
     pub provider_timeout_secs: u64,
 
     /// Observability backend configuration (`[observability]`).
@@ -1137,6 +1138,7 @@ pub struct AgentConfig {
     #[serde(default = "default_agent_tool_dispatcher")]
     pub tool_dispatcher: String,
     /// Tools exempt from the within-turn duplicate-call dedup check.
+    /// Exact tool names only; wildcard patterns are not supported.
     #[serde(default)]
     pub tool_call_dedup_exempt: Vec<String>,
     /// Optional allowlist for primary-agent tool visibility.
@@ -2733,6 +2735,65 @@ impl ProxyConfig {
         builder
     }
 
+    pub fn apply_to_reqwest_blocking_builder(
+        &self,
+        mut builder: reqwest::blocking::ClientBuilder,
+        service_key: &str,
+    ) -> reqwest::blocking::ClientBuilder {
+        if !self.should_apply_to_service(service_key) {
+            return builder;
+        }
+
+        let no_proxy = self.no_proxy_value();
+
+        if let Some(url) = normalize_proxy_url_option(self.all_proxy.as_deref()) {
+            match reqwest::Proxy::all(&url) {
+                Ok(proxy) => {
+                    builder = builder.proxy(apply_no_proxy(proxy, no_proxy.clone()));
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        proxy_url = %url,
+                        service_key,
+                        "Ignoring invalid all_proxy URL: {error}"
+                    );
+                }
+            }
+        }
+
+        if let Some(url) = normalize_proxy_url_option(self.http_proxy.as_deref()) {
+            match reqwest::Proxy::http(&url) {
+                Ok(proxy) => {
+                    builder = builder.proxy(apply_no_proxy(proxy, no_proxy.clone()));
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        proxy_url = %url,
+                        service_key,
+                        "Ignoring invalid http_proxy URL: {error}"
+                    );
+                }
+            }
+        }
+
+        if let Some(url) = normalize_proxy_url_option(self.https_proxy.as_deref()) {
+            match reqwest::Proxy::https(&url) {
+                Ok(proxy) => {
+                    builder = builder.proxy(apply_no_proxy(proxy, no_proxy));
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        proxy_url = %url,
+                        service_key,
+                        "Ignoring invalid https_proxy URL: {error}"
+                    );
+                }
+            }
+        }
+
+        builder
+    }
+
     pub fn apply_to_process_env(&self) {
         set_proxy_env_pair("HTTP_PROXY", self.http_proxy.as_deref());
         set_proxy_env_pair("HTTPS_PROXY", self.https_proxy.as_deref());
@@ -2968,6 +3029,13 @@ pub fn apply_runtime_proxy_to_builder(
     runtime_proxy_config().apply_to_reqwest_builder(builder, service_key)
 }
 
+pub fn apply_runtime_proxy_to_blocking_builder(
+    builder: reqwest::blocking::ClientBuilder,
+    service_key: &str,
+) -> reqwest::blocking::ClientBuilder {
+    runtime_proxy_config().apply_to_reqwest_blocking_builder(builder, service_key)
+}
+
 pub fn build_runtime_proxy_client(service_key: &str) -> reqwest::Client {
     let cache_key = runtime_proxy_cache_key(service_key, None, None);
     if let Some(client) = runtime_proxy_cached_client(&cache_key) {
@@ -3007,6 +3075,24 @@ pub fn build_runtime_proxy_client_with_timeouts(
     });
     set_runtime_proxy_cached_client(cache_key, client.clone());
     client
+}
+
+pub fn build_runtime_proxy_blocking_client_with_timeouts(
+    service_key: &str,
+    timeout_secs: u64,
+    connect_timeout_secs: u64,
+) -> reqwest::blocking::Client {
+    let builder = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(timeout_secs))
+        .connect_timeout(std::time::Duration::from_secs(connect_timeout_secs));
+    let builder = apply_runtime_proxy_to_blocking_builder(builder, service_key);
+    builder.build().unwrap_or_else(|error| {
+        tracing::warn!(
+            service_key,
+            "Failed to build proxied blocking timeout client: {error}"
+        );
+        reqwest::blocking::Client::new()
+    })
 }
 
 fn parse_proxy_scope(raw: &str) -> Option<ProxyScope> {
@@ -8546,7 +8632,7 @@ impl Config {
             }
             if !normalized
                 .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '*')
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
             {
                 anyhow::bail!(
                     "agent.tool_call_dedup_exempt[{i}] contains invalid characters: {normalized}"
@@ -12554,6 +12640,17 @@ default_temperature = 0.7
         let error = config
             .validate()
             .expect_err("expected tool_call_dedup_exempt whitespace validation failure");
+        assert!(error.to_string().contains("agent.tool_call_dedup_exempt"));
+    }
+
+    #[test]
+    async fn config_validate_rejects_tool_call_dedup_exempt_wildcard() {
+        let mut config = Config::default();
+        config.agent.tool_call_dedup_exempt = vec!["browser_*".to_string()];
+
+        let error = config
+            .validate()
+            .expect_err("expected tool_call_dedup_exempt wildcard validation failure");
         assert!(error.to_string().contains("agent.tool_call_dedup_exempt"));
     }
 

@@ -3069,7 +3069,7 @@ pub async fn run(
                     ld_cfg,
                     TOOL_LOOP_CANARY_TOKENS_ENABLED.scope(
                         config.security.canary_tokens,
-                        TOOL_LOOP_DEDUP_EXEMPT.scope(
+                        scope_tool_call_dedup_exempt(
                             config.agent.tool_call_dedup_exempt.clone(),
                             run_tool_call_loop(
                                 provider.as_ref(),
@@ -3301,7 +3301,7 @@ pub async fn run(
                         ld_cfg,
                         TOOL_LOOP_CANARY_TOKENS_ENABLED.scope(
                             config.security.canary_tokens,
-                            TOOL_LOOP_DEDUP_EXEMPT.scope(
+                            scope_tool_call_dedup_exempt(
                                 config.agent.tool_call_dedup_exempt.clone(),
                                 run_tool_call_loop(
                                     provider.as_ref(),
@@ -3659,7 +3659,7 @@ pub async fn process_message_with_session(
         cost_enforcement_context,
         SAFETY_HEARTBEAT_CONFIG.scope(
             hb_cfg,
-            TOOL_LOOP_DEDUP_EXEMPT.scope(
+            scope_tool_call_dedup_exempt(
                 config.agent.tool_call_dedup_exempt.clone(),
                 agent_turn(
                     provider.as_ref(),
