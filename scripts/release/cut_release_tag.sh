@@ -10,12 +10,61 @@ Create an annotated release tag from the current checkout.
 Requirements:
 - tag must match vX.Y.Z (optional suffix like -rc.1)
 - working tree must be clean
-- HEAD must match origin/master
+- HEAD must match origin/<default-branch>
 - tag must not already exist locally or on origin
 
 Options:
   --push   Push the tag to origin after creating it
 USAGE
+}
+
+detect_origin_default_branch() {
+  local ref=""
+
+  ref="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+  ref="${ref#origin/}"
+  if [[ -n "$ref" ]]; then
+    printf '%s\n' "$ref"
+    return 0
+  fi
+
+  if git rev-parse --verify origin/main >/dev/null 2>&1; then
+    printf 'main\n'
+    return 0
+  fi
+
+  if git rev-parse --verify origin/master >/dev/null 2>&1; then
+    printf 'master\n'
+    return 0
+  fi
+
+  return 1
+}
+
+detect_origin_repo() {
+  local remote_url repo
+
+  remote_url="$(git remote get-url origin 2>/dev/null || true)"
+  case "$remote_url" in
+    git@github.com:*.git)
+      repo="${remote_url#git@github.com:}"
+      repo="${repo%.git}"
+      ;;
+    https://github.com/*)
+      repo="${remote_url#https://github.com/}"
+      repo="${repo%.git}"
+      ;;
+    *)
+      repo=""
+      ;;
+  esac
+
+  if [[ -n "$repo" ]]; then
+    printf '%s\n' "$repo"
+    return 0
+  fi
+
+  gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true
 }
 
 if [[ $# -lt 1 || $# -gt 2 ]]; then
@@ -49,21 +98,31 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 1
 fi
 
-echo "Fetching origin/master and tags..."
-git fetch --quiet origin master --tags
+DEFAULT_BRANCH="$(detect_origin_default_branch || true)"
+if [[ -z "$DEFAULT_BRANCH" ]]; then
+  echo "error: could not determine origin default branch." >&2
+  echo "hint: ensure origin/HEAD, origin/main, or origin/master is available." >&2
+  exit 1
+fi
+
+REMOTE_REF="origin/$DEFAULT_BRANCH"
+
+echo "Fetching $REMOTE_REF and tags..."
+git fetch --quiet origin "$DEFAULT_BRANCH" --tags
 
 HEAD_SHA="$(git rev-parse HEAD)"
-MASTER_SHA="$(git rev-parse origin/master)"
-if [[ "$HEAD_SHA" != "$MASTER_SHA" ]]; then
-  echo "error: HEAD ($HEAD_SHA) is not origin/master ($MASTER_SHA)." >&2
-  echo "hint: checkout/update master before cutting a release tag." >&2
+DEFAULT_SHA="$(git rev-parse "$REMOTE_REF")"
+if [[ "$HEAD_SHA" != "$DEFAULT_SHA" ]]; then
+  echo "error: HEAD ($HEAD_SHA) is not $REMOTE_REF ($DEFAULT_SHA)." >&2
+  echo "hint: checkout/update $DEFAULT_BRANCH before cutting a release tag." >&2
   exit 1
 fi
 
 # --- CI green gate (blocks on pending/failure, warns on unavailable) ---
 echo "Checking CI status on HEAD ($HEAD_SHA)..."
 if command -v gh >/dev/null 2>&1; then
-  CI_STATUS="$(gh api "repos/$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || echo 'zeroclaw-labs/zeroclaw')/commits/${HEAD_SHA}/check-runs" \
+  ORIGIN_REPO="$(detect_origin_repo)"
+  CI_STATUS="$(gh api "repos/${ORIGIN_REPO:-zeroclaw-labs/zeroclaw}/commits/${HEAD_SHA}/check-runs" \
     --jq '[.check_runs[] | select(.name == "CI Required Gate")] |
            if length == 0 then "not_found"
            elif .[0].conclusion == "success" then "success"
@@ -80,7 +139,7 @@ if command -v gh >/dev/null 2>&1; then
       ;;
     not_found)
       echo "warning: CI Required Gate check-run not found for $HEAD_SHA." >&2
-      echo "hint: ensure ci-run.yml has completed on main before cutting a release tag." >&2
+      echo "hint: ensure ci-run.yml has completed on $DEFAULT_BRANCH before cutting a release tag." >&2
       ;;
     api_error)
       echo "warning: could not query GitHub API for CI status (gh CLI issue or auth)." >&2

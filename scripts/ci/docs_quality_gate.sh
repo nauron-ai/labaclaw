@@ -5,8 +5,33 @@ set -euo pipefail
 BASE_SHA="${BASE_SHA:-}"
 DOCS_FILES_RAW="${DOCS_FILES:-}"
 
-if [ -z "$BASE_SHA" ] && git rev-parse --verify origin/master >/dev/null 2>&1; then
-    BASE_SHA="$(git merge-base origin/master HEAD)"
+infer_origin_base_ref() {
+    local ref=""
+
+    ref="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+    if [ -n "$ref" ]; then
+        printf '%s\n' "$ref"
+        return 0
+    fi
+
+    if git rev-parse --verify origin/main >/dev/null 2>&1; then
+        printf 'origin/main\n'
+        return 0
+    fi
+
+    if git rev-parse --verify origin/master >/dev/null 2>&1; then
+        printf 'origin/master\n'
+        return 0
+    fi
+
+    return 1
+}
+
+if [ -z "$BASE_SHA" ]; then
+    BASE_REF="$(infer_origin_base_ref || true)"
+    if [ -n "${BASE_REF:-}" ]; then
+        BASE_SHA="$(git merge-base "$BASE_REF" HEAD)"
+    fi
 fi
 
 if [ -z "$DOCS_FILES_RAW" ] && [ -n "$BASE_SHA" ] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
