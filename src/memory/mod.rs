@@ -42,6 +42,7 @@ pub use traits::Memory;
 pub use traits::{MemoryCategory, MemoryEntry};
 
 use crate::config::{EmbeddingRouteConfig, MemoryConfig, StorageProviderConfig};
+use crate::providers::resolve_provider_specific_env_credential;
 use anyhow::Context;
 use std::path::Path;
 use std::sync::Arc;
@@ -127,27 +128,11 @@ impl std::fmt::Debug for ResolvedEmbeddingConfig {
     }
 }
 
-/// Look up the provider-specific environment variable for common embedding providers,
-/// so that `OPENAI_API_KEY` (etc.) takes precedence over the default-provider key
-/// that the caller passes in. Returns `None` for unknown providers.
-fn embedding_provider_env_key(provider: &str) -> Option<String> {
-    let env_var = match provider.trim() {
-        "openai" => "OPENAI_API_KEY",
-        "openrouter" => "OPENROUTER_API_KEY",
-        "cohere" => "COHERE_API_KEY",
-        _ => return None,
-    };
-    std::env::var(env_var)
-        .ok()
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
-}
-
 fn resolve_embedding_fallback_api_key(
     provider: &str,
     caller_api_key: Option<&String>,
 ) -> Option<String> {
-    embedding_provider_env_key(provider).or_else(|| caller_api_key.cloned())
+    resolve_provider_specific_env_credential(provider).or_else(|| caller_api_key.cloned())
 }
 
 fn resolve_embedding_config(
@@ -527,7 +512,42 @@ pub fn create_response_cache(config: &MemoryConfig, workspace_dir: &Path) -> Opt
 mod tests {
     use super::*;
     use crate::config::{EmbeddingRouteConfig, StorageProviderConfig};
+    use std::sync::{Mutex, OnceLock};
     use tempfile::TempDir;
+
+    struct EnvGuard {
+        key: &'static str,
+        original: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: Option<&str>) -> Self {
+            let original = std::env::var(key).ok();
+            match value {
+                Some(next) => std::env::set_var(key, next),
+                None => std::env::remove_var(key),
+            }
+
+            Self { key, original }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(original) = self.original.as_deref() {
+                std::env::set_var(self.key, original);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env lock poisoned")
+    }
 
     #[test]
     fn factory_sqlite() {
@@ -819,9 +839,8 @@ mod tests {
     // that may be set in the developer environment.
     #[test]
     fn resolve_embedding_config_uses_embedding_provider_env_key_not_default_provider_key() {
-        // COHERE_API_KEY is almost certainly unset in normal dev environments.
-        let prev = std::env::var("COHERE_API_KEY").ok();
-        std::env::set_var("COHERE_API_KEY", "cohere-from-env");
+        let _env_lock = env_lock();
+        let _cohere_guard = EnvGuard::set("COHERE_API_KEY", Some("cohere-from-env"));
 
         let cfg = MemoryConfig {
             embedding_provider: "cohere".into(),
@@ -832,12 +851,6 @@ mod tests {
 
         // Simulate: caller passes the Gemini (default_provider) api key.
         let resolved = resolve_embedding_config(&cfg, &[], Some("gemini-key-must-not-be-used"));
-
-        // Restore env.
-        match prev {
-            Some(v) => std::env::set_var("COHERE_API_KEY", v),
-            None => std::env::remove_var("COHERE_API_KEY"),
-        }
 
         assert_eq!(
             resolved.api_key.as_deref(),
@@ -853,10 +866,9 @@ mod tests {
 
     #[test]
     fn resolve_embedding_config_uses_routed_provider_env_key_for_hint_routes() {
-        let prev_openai = std::env::var("OPENAI_API_KEY").ok();
-        let prev_cohere = std::env::var("COHERE_API_KEY").ok();
-        std::env::set_var("OPENAI_API_KEY", "openai-from-env");
-        std::env::set_var("COHERE_API_KEY", "cohere-from-env");
+        let _env_lock = env_lock();
+        let _openai_guard = EnvGuard::set("OPENAI_API_KEY", Some("openai-from-env"));
+        let _cohere_guard = EnvGuard::set("COHERE_API_KEY", Some("cohere-from-env"));
 
         let cfg = MemoryConfig {
             embedding_provider: "openai".into(),
@@ -874,18 +886,27 @@ mod tests {
 
         let resolved = resolve_embedding_config(&cfg, &routes, Some("gemini-caller-key"));
 
-        match prev_openai {
-            Some(value) => std::env::set_var("OPENAI_API_KEY", value),
-            None => std::env::remove_var("OPENAI_API_KEY"),
-        }
-        match prev_cohere {
-            Some(value) => std::env::set_var("COHERE_API_KEY", value),
-            None => std::env::remove_var("COHERE_API_KEY"),
-        }
-
         assert_eq!(resolved.provider, "cohere");
         assert_eq!(resolved.api_key.as_deref(), Some("cohere-from-env"));
         assert_ne!(resolved.api_key.as_deref(), Some("openai-from-env"));
         assert_ne!(resolved.api_key.as_deref(), Some("gemini-caller-key"));
+    }
+
+    #[test]
+    fn resolve_embedding_config_uses_registry_backed_provider_env_key() {
+        let _env_lock = env_lock();
+        let _provider_guard = EnvGuard::set("OPENCODE_GO_API_KEY", Some("opencode-go-from-env"));
+
+        let cfg = MemoryConfig {
+            embedding_provider: "opencode-go".into(),
+            embedding_model: "text-embedding-3-small".into(),
+            embedding_dimensions: 1536,
+            ..MemoryConfig::default()
+        };
+
+        let resolved = resolve_embedding_config(&cfg, &[], Some("caller-key"));
+
+        assert_eq!(resolved.api_key.as_deref(), Some("opencode-go-from-env"));
+        assert_ne!(resolved.api_key.as_deref(), Some("caller-key"));
     }
 }

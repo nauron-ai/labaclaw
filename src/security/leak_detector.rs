@@ -378,44 +378,37 @@ fn normalize_url_for_entropy_scan(url: &str, threshold: f64) -> String {
     let prefix = &url[..authority_end];
     let tail = &url[tail_start..];
     let path = &url[authority_end..tail_start];
-    let preserved_segments = path
+    let preserved_fragments = path
         .split('/')
         .filter(|segment| !segment.is_empty())
-        .filter(|segment| looks_like_secret_path_segment(segment, threshold))
+        .flat_map(|segment| {
+            segment
+                .split(['.', '-', '_'])
+                .filter(move |fragment| looks_like_secret_path_fragment(fragment, threshold))
+        })
         .collect::<Vec<_>>();
 
-    if preserved_segments.is_empty() {
+    if preserved_fragments.is_empty() {
         format!("{prefix}{tail}")
+    } else if tail.is_empty() {
+        format!("{prefix} {}", preserved_fragments.join(" "))
     } else {
-        format!("{prefix}/{}{tail}", preserved_segments.join("/"))
+        format!("{prefix} {}{tail}", preserved_fragments.join(" "))
     }
 }
 
-fn looks_like_secret_path_segment(segment: &str, threshold: f64) -> bool {
-    if segment.len() < ENTROPY_TOKEN_MIN_LEN {
-        return false;
-    }
-    if segment.contains('.') {
+fn looks_like_secret_path_fragment(fragment: &str, threshold: f64) -> bool {
+    if fragment.len() < ENTROPY_TOKEN_MIN_LEN {
         return false;
     }
 
-    let has_alpha = segment.chars().any(|c| c.is_ascii_alphabetic());
-    let has_digit = segment.chars().any(|c| c.is_ascii_digit());
+    let has_alpha = fragment.chars().any(|c| c.is_ascii_alphabetic());
+    let has_digit = fragment.chars().any(|c| c.is_ascii_digit());
     if !(has_alpha && has_digit) {
         return false;
     }
 
-    if segment.contains('-') {
-        let alpha_chunks = segment
-            .split('-')
-            .filter(|chunk| chunk.chars().any(|c| c.is_ascii_alphabetic()))
-            .count();
-        if alpha_chunks > 1 {
-            return false;
-        }
-    }
-
-    shannon_entropy(segment.as_bytes()) >= threshold
+    shannon_entropy(fragment.as_bytes()) >= threshold
 }
 
 fn extract_candidate_tokens(content: &str) -> Vec<&str> {
@@ -629,11 +622,17 @@ MIIEowIBAAKCAQEA0ZPr5JeyVDonXsKhfq...
     fn url_query_tokens_are_still_scanned_for_high_entropy() {
         let detector = LeakDetector::with_sensitivity(0.9);
         let content = format!(
-            "Download https://example.org/documents/report.pdf?token={}",
+            "Download https://example.org/documents/report.pdf?sig={}",
             high_entropy_token()
         );
         let result = detector.scan(&content);
-        assert!(matches!(result, LeakResult::Detected { .. }));
+        match result {
+            LeakResult::Detected { patterns, redacted } => {
+                assert!(patterns.iter().any(|p| p.contains("High-entropy token")));
+                assert!(redacted.contains("[REDACTED_HIGH_ENTROPY_TOKEN]"));
+            }
+            LeakResult::Clean => panic!("expected high-entropy detection"),
+        }
     }
 
     #[test]
@@ -645,6 +644,23 @@ MIIEowIBAAKCAQEA0ZPr5JeyVDonXsKhfq...
         );
         let result = detector.scan(&content);
         assert!(matches!(result, LeakResult::Detected { .. }));
+    }
+
+    #[test]
+    fn mixed_url_path_segments_are_still_scanned_for_high_entropy() {
+        let detector = LeakDetector::with_sensitivity(0.9);
+        let content = format!(
+            "Asset https://example.org/documents/report-{}.pdf is signed",
+            high_entropy_token()
+        );
+        let result = detector.scan(&content);
+        match result {
+            LeakResult::Detected { patterns, redacted } => {
+                assert!(patterns.iter().any(|p| p.contains("High-entropy token")));
+                assert!(redacted.contains("[REDACTED_HIGH_ENTROPY_TOKEN]"));
+            }
+            LeakResult::Clean => panic!("expected high-entropy detection"),
+        }
     }
 
     #[test]

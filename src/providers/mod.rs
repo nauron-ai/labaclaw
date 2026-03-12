@@ -934,26 +934,7 @@ pub async fn api_error(provider: &str, response: reqwest::Response) -> anyhow::E
 /// For MiniMax, OAuth mode supports `api_key = "minimax-oauth"`, resolving credentials from
 /// `MINIMAX_OAUTH_TOKEN` first, then `MINIMAX_API_KEY`, and finally
 /// `MINIMAX_OAUTH_REFRESH_TOKEN` (automatic access-token refresh).
-fn resolve_provider_credential(name: &str, credential_override: Option<&str>) -> Option<String> {
-    let mut minimax_oauth_placeholder_requested = false;
-
-    if let Some(raw_override) = credential_override {
-        let trimmed_override = raw_override.trim();
-        if !trimmed_override.is_empty() {
-            if is_minimax_alias(name) && is_minimax_oauth_placeholder(trimmed_override) {
-                minimax_oauth_placeholder_requested = true;
-                if let Some(credential) = resolve_minimax_static_credential() {
-                    return Some(credential);
-                }
-                if let Some(credential) = resolve_minimax_oauth_refresh_token(name) {
-                    return Some(credential);
-                }
-            } else {
-                return Some(trimmed_override.to_owned());
-            }
-        }
-    }
-
+pub(crate) fn resolve_provider_specific_env_credential(name: &str) -> Option<String> {
     let provider_env_candidates: Vec<&str> = match name {
         "anthropic" => vec!["ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
         "openrouter" => vec!["OPENROUTER_API_KEY"],
@@ -1013,6 +994,41 @@ fn resolve_provider_credential(name: &str, credential_override: Option<&str>) ->
                 return Some(value.to_string());
             }
         }
+    }
+
+    None
+}
+
+fn provider_uses_internal_credential_path(name: &str) -> bool {
+    matches!(name, "bedrock" | "aws-bedrock")
+}
+
+fn resolve_provider_credential(name: &str, credential_override: Option<&str>) -> Option<String> {
+    let mut minimax_oauth_placeholder_requested = false;
+
+    if let Some(raw_override) = credential_override {
+        let trimmed_override = raw_override.trim();
+        if !trimmed_override.is_empty() {
+            if is_minimax_alias(name) && is_minimax_oauth_placeholder(trimmed_override) {
+                minimax_oauth_placeholder_requested = true;
+                if let Some(credential) = resolve_minimax_static_credential() {
+                    return Some(credential);
+                }
+                if let Some(credential) = resolve_minimax_oauth_refresh_token(name) {
+                    return Some(credential);
+                }
+            } else {
+                return Some(trimmed_override.to_owned());
+            }
+        }
+    }
+
+    if provider_uses_internal_credential_path(name) {
+        return None;
+    }
+
+    if let Some(credential) = resolve_provider_specific_env_credential(name) {
+        return Some(credential);
     }
 
     if is_minimax_alias(name) {
