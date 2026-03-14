@@ -16,8 +16,8 @@ use crate::runtime::{AgentWorkspaceMount, DockerAgentSpawnRequest, DockerAgentSp
 use crate::security::policy::ToolOperation;
 use crate::security::{AutonomyLevel, SecurityPolicy};
 use crate::spawned_runtime::{
-    bootstrap_result_path, read_runtime_state, runtime_state_path, write_task_request,
-    SpawnedAgentRuntimeState, SpawnedAgentTaskRequest,
+    bootstrap_result_path, read_runtime_state, runtime_state_path, update_external_runtime_state,
+    write_task_request, SpawnedAgentRuntimeState, SpawnedAgentTaskRequest,
 };
 use crate::worker_plane::{
     build_distributed_spawn_plan, build_local_artifact_refs, build_spawn_plan_from_refs,
@@ -778,66 +778,131 @@ async fn run_spawn_workflow(
     )
     .await?;
     if distributed_backend {
-        let spec_bytes = fs::read(&materialized.specs_json_path)
-            .await
-            .with_context(|| {
+        update_external_runtime_state(
+            &materialized.agent_home,
+            &agent_id,
+            |state: &mut SpawnedAgentRuntimeState| {
+                state.lifecycle_status = "provisioning".into();
+                state.task_status = "pending".into();
+                state.current_request_id = Some(boot_request.request_id.clone());
+                state.last_request_id = Some(boot_request.request_id.clone());
+                state.completed_at = None;
+                state.result_path = None;
+                state.error = None;
+            },
+        )
+        .await?;
+
+        let distributed_result: Result<()> = async {
+            let spec_bytes = fs::read(&materialized.specs_json_path)
+                .await
+                .with_context(|| {
+                    format!(
+                        "Failed to read AgentSpec payload from {}",
+                        materialized.specs_json_path.display()
+                    )
+                })?;
+            upload_bytes_to_artifact_ref(
+                &root_config.worker_plane,
+                &spawn_plan.artifact_refs.spec_ref,
+                spec_bytes,
+            )
+            .await?;
+            registry.append_progress(
+                &agent_id,
+                "spec_uploaded",
                 format!(
-                    "Failed to read AgentSpec payload from {}",
-                    materialized.specs_json_path.display()
+                    "Uploaded AgentSpec to {}",
+                    spawn_plan.artifact_refs.spec_ref
+                ),
+            );
+
+            let bootstrap_bytes = fs::read(&boot_request_path).await.with_context(|| {
+                format!(
+                    "Failed to read bootstrap request from {}",
+                    boot_request_path.display()
                 )
             })?;
-        upload_bytes_to_artifact_ref(
-            &root_config.worker_plane,
-            &spawn_plan.artifact_refs.spec_ref,
-            spec_bytes,
-        )
-        .await?;
-        registry.append_progress(
-            &agent_id,
-            "spec_uploaded",
-            format!(
-                "Uploaded AgentSpec to {}",
-                spawn_plan.artifact_refs.spec_ref
-            ),
-        );
-
-        let bootstrap_bytes = fs::read(&boot_request_path).await.with_context(|| {
-            format!(
-                "Failed to read bootstrap request from {}",
-                boot_request_path.display()
+            upload_bytes_to_artifact_ref(
+                &root_config.worker_plane,
+                &spawn_plan.artifact_refs.bootstrap_ref,
+                bootstrap_bytes,
             )
-        })?;
-        upload_bytes_to_artifact_ref(
-            &root_config.worker_plane,
-            &spawn_plan.artifact_refs.bootstrap_ref,
-            bootstrap_bytes,
-        )
-        .await?;
-        registry.append_progress(
-            &agent_id,
-            "bootstrap_uploaded",
-            format!(
-                "Uploaded bootstrap request to {}",
-                spawn_plan.artifact_refs.bootstrap_ref
-            ),
-        );
+            .await?;
+            registry.append_progress(
+                &agent_id,
+                "bootstrap_uploaded",
+                format!(
+                    "Uploaded bootstrap request to {}",
+                    spawn_plan.artifact_refs.bootstrap_ref
+                ),
+            );
 
-        publish_json_message(
-            &root_config.worker_plane,
-            &spawn_plan.topics.command_topic,
-            COMMAND_TYPE_SPAWN_AGENT_REQUESTED,
-            &spawn_plan.spawn_command.agent_id,
-            &spawn_request_payload(&spawn_plan),
-        )
-        .await?;
-        registry.append_progress(
-            &agent_id,
-            "published",
-            format!(
-                "Spawn plan staged for worker-plane on topics {} / {}",
-                spawn_plan.topics.command_topic, spawn_plan.topics.event_topic
-            ),
-        );
+            publish_json_message(
+                &root_config.worker_plane,
+                &spawn_plan.topics.command_topic,
+                COMMAND_TYPE_SPAWN_AGENT_REQUESTED,
+                &spawn_plan.spawn_command.agent_id,
+                &spawn_request_payload(&spawn_plan),
+            )
+            .await?;
+            Ok(())
+        }
+        .await;
+
+        match distributed_result {
+            Ok(()) => {
+                update_external_runtime_state(
+                    &materialized.agent_home,
+                    &agent_id,
+                    |state: &mut SpawnedAgentRuntimeState| {
+                        state.lifecycle_status = "queued".into();
+                        state.task_status = "pending".into();
+                        state.current_request_id = Some(boot_request.request_id.clone());
+                        state.last_request_id = Some(boot_request.request_id.clone());
+                        state.completed_at = None;
+                        state.error = None;
+                    },
+                )
+                .await?;
+                registry.append_progress(
+                    &agent_id,
+                    "published",
+                    format!(
+                        "Spawn plan staged for worker-plane on topics {} / {}",
+                        spawn_plan.topics.command_topic, spawn_plan.topics.event_topic
+                    ),
+                );
+            }
+            Err(error) => {
+                update_external_runtime_state(
+                    &materialized.agent_home,
+                    &agent_id,
+                    |state: &mut SpawnedAgentRuntimeState| {
+                        state.lifecycle_status = "failed".into();
+                        state.task_status = "failed".into();
+                        state.current_request_id = None;
+                        state.last_request_id = Some(boot_request.request_id.clone());
+                        state.completed_at = Some(Utc::now().to_rfc3339());
+                        state.error = Some(error.to_string());
+                    },
+                )
+                .await?;
+                write_event(
+                    &materialized.agent_home,
+                    "AgentSpawnFailed",
+                    json!({
+                        "event_id": Uuid::new_v4().to_string(),
+                        "agent_id": spec.agent_id,
+                        "request_id": boot_request.request_id,
+                        "error": error.to_string(),
+                        "failed_at": Utc::now().to_rfc3339(),
+                    }),
+                )
+                .await?;
+                return Err(error);
+            }
+        }
         registry.clear_handle(&agent_id);
         return Ok(());
     }
