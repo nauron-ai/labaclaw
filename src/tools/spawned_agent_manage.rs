@@ -380,7 +380,10 @@ impl SpawnedAgentManageTool {
         Ok(())
     }
 
-    fn resolve_snapshot(&self, agent_id: &str) -> anyhow::Result<Option<SpawnedAgentStatusSnapshot>> {
+    fn resolve_snapshot(
+        &self,
+        agent_id: &str,
+    ) -> anyhow::Result<Option<SpawnedAgentStatusSnapshot>> {
         if let Some(snapshot) = self.registry.get_status(agent_id) {
             return Ok(Some(snapshot));
         }

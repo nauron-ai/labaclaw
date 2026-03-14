@@ -9953,9 +9953,10 @@ impl Config {
             }
         }
 
-        if let Some(brokers) =
-            env_value_any(&["LABACLAW_WORKER_PLANE_REDPANDA_BROKERS", "LABACLAW_REDPANDA_BROKERS"])
-        {
+        if let Some(brokers) = env_value_any(&[
+            "LABACLAW_WORKER_PLANE_REDPANDA_BROKERS",
+            "LABACLAW_REDPANDA_BROKERS",
+        ]) {
             self.worker_plane.redpanda.brokers = brokers
                 .split(',')
                 .map(str::trim)
@@ -9977,24 +9978,28 @@ impl Config {
             self.worker_plane.redpanda.projection_consumer_group = group;
         }
 
-        if let Some(endpoint) =
-            env_value_any(&["LABACLAW_WORKER_PLANE_RUSTFS_ENDPOINT", "LABACLAW_RUSTFS_ENDPOINT"])
-        {
+        if let Some(endpoint) = env_value_any(&[
+            "LABACLAW_WORKER_PLANE_RUSTFS_ENDPOINT",
+            "LABACLAW_RUSTFS_ENDPOINT",
+        ]) {
             self.worker_plane.artifacts.endpoint = Some(endpoint);
         }
-        if let Some(bucket) =
-            env_value_any(&["LABACLAW_WORKER_PLANE_RUSTFS_BUCKET", "LABACLAW_RUSTFS_BUCKET"])
-        {
+        if let Some(bucket) = env_value_any(&[
+            "LABACLAW_WORKER_PLANE_RUSTFS_BUCKET",
+            "LABACLAW_RUSTFS_BUCKET",
+        ]) {
             self.worker_plane.artifacts.bucket = bucket;
         }
-        if let Some(prefix) =
-            env_value_any(&["LABACLAW_WORKER_PLANE_RUSTFS_PREFIX", "LABACLAW_RUSTFS_PREFIX"])
-        {
+        if let Some(prefix) = env_value_any(&[
+            "LABACLAW_WORKER_PLANE_RUSTFS_PREFIX",
+            "LABACLAW_RUSTFS_PREFIX",
+        ]) {
             self.worker_plane.artifacts.prefix = prefix;
         }
-        if let Some(region) =
-            env_value_any(&["LABACLAW_WORKER_PLANE_RUSTFS_REGION", "LABACLAW_RUSTFS_REGION"])
-        {
+        if let Some(region) = env_value_any(&[
+            "LABACLAW_WORKER_PLANE_RUSTFS_REGION",
+            "LABACLAW_RUSTFS_REGION",
+        ]) {
             self.worker_plane.artifacts.region = region;
         }
         if let Some(flag) = env_value_any(&["LABACLAW_WORKER_PLANE_RUSTFS_FORCE_PATH_STYLE"]) {
@@ -10009,22 +10014,22 @@ impl Config {
                 ),
             }
         }
-        if let Some(access_key) =
-            env_value_any(&["LABACLAW_WORKER_PLANE_RUSTFS_ACCESS_KEY", "LABACLAW_RUSTFS_ACCESS_KEY"])
-        {
+        if let Some(access_key) = env_value_any(&[
+            "LABACLAW_WORKER_PLANE_RUSTFS_ACCESS_KEY",
+            "LABACLAW_RUSTFS_ACCESS_KEY",
+        ]) {
             self.worker_plane.artifacts.access_key = Some(access_key);
         }
-        if let Some(secret_key) =
-            env_value_any(&["LABACLAW_WORKER_PLANE_RUSTFS_SECRET_KEY", "LABACLAW_RUSTFS_SECRET_KEY"])
-        {
+        if let Some(secret_key) = env_value_any(&[
+            "LABACLAW_WORKER_PLANE_RUSTFS_SECRET_KEY",
+            "LABACLAW_RUSTFS_SECRET_KEY",
+        ]) {
             self.worker_plane.artifacts.secret_key = Some(secret_key);
         }
         if let Some(namespace) = env_value_any(&["LABACLAW_WORKER_PLANE_NAMESPACE"]) {
             self.worker_plane.kubernetes.namespace = namespace;
         }
-        if let Some(service_account) =
-            env_value_any(&["LABACLAW_WORKER_PLANE_SERVICE_ACCOUNT"])
-        {
+        if let Some(service_account) = env_value_any(&["LABACLAW_WORKER_PLANE_SERVICE_ACCOUNT"]) {
             self.worker_plane.kubernetes.service_account = service_account;
         }
         // Proxy enabled flag: LABACLAW_PROXY_ENABLED

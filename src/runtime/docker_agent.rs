@@ -277,7 +277,7 @@ mod tests {
         assert!(debug.contains("--memory"));
         assert!(debug.contains("768m"));
         assert!(debug.contains("--cpus"));
-        assert!(debug.contains("2"));
+        assert!(debug.contains('2'));
         assert!(debug.contains("--read-only"));
         assert!(debug.contains("LABACLAW_CONFIG_DIR=/agent"));
         assert!(debug.contains("agent-runtime"));

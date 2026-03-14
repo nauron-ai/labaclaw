@@ -158,6 +158,35 @@ struct SelectedModelPlan {
     rationale: String,
 }
 
+#[derive(Debug, Clone)]
+struct SpawnWorkflowRequest {
+    agent_id: String,
+    spec: AgentSpec,
+    selected_models: SelectedModelPlan,
+    image: String,
+    container_name: String,
+    workspace_mounts: Vec<AgentWorkspaceMount>,
+    boot_message: String,
+    lifecycle_mode: LifecycleMode,
+    task: String,
+}
+
+struct AgentSpecBuildRequest<'a> {
+    agent_id: &'a str,
+    display_name: &'a str,
+    pack: &'a PackProfile,
+    task_profile: TaskProfile,
+    lifecycle_mode: LifecycleMode,
+    image: String,
+    workspace_mounts: &'a [AgentWorkspaceMountSpec],
+    selected_models: &'a SelectedModelPlan,
+    initial_mission: String,
+    network: String,
+    memory_limit_mb: Option<u64>,
+    cpu_limit: Option<f64>,
+    read_only_rootfs: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct AgentPersonaSpec {
     role: String,
@@ -431,21 +460,21 @@ impl Tool for SpawnAgentTool {
             task_profile,
         );
 
-        let spec = build_agent_spec(
-            &agent_id,
-            &request.agent_name,
-            &pack,
+        let spec = build_agent_spec(AgentSpecBuildRequest {
+            agent_id: &agent_id,
+            display_name: &request.agent_name,
+            pack: &pack,
             task_profile,
-            request.lifecycle_mode,
-            image.clone(),
-            &workspace_mounts,
-            &selected_models,
-            initial_mission.clone(),
-            self.root_config.runtime.docker.network.clone(),
-            self.root_config.runtime.docker.memory_limit_mb,
-            self.root_config.runtime.docker.cpu_limit,
-            self.root_config.runtime.docker.read_only_rootfs,
-        );
+            lifecycle_mode: request.lifecycle_mode,
+            image: image.clone(),
+            workspace_mounts: &workspace_mounts,
+            selected_models: &selected_models,
+            initial_mission: initial_mission.clone(),
+            network: self.root_config.runtime.docker.network.clone(),
+            memory_limit_mb: self.root_config.runtime.docker.memory_limit_mb,
+            cpu_limit: self.root_config.runtime.docker.cpu_limit,
+            read_only_rootfs: self.root_config.runtime.docker.read_only_rootfs,
+        });
 
         let agent_home = self.labaclaw_dir.join("spawned-agents").join(&agent_id);
         let runtime_state_path = runtime_state_path(&agent_home);
@@ -506,21 +535,20 @@ impl Tool for SpawnAgentTool {
         let task = request.task.clone();
 
         let handle = tokio::spawn(async move {
-            if let Err(error) = run_spawn_workflow(
-                &registry,
-                &spawner,
-                root_config.as_ref(),
-                &workflow_agent_id,
-                &workflow_spec,
-                &selected_models,
-                &image,
-                &container_name,
-                request_workspace_mounts,
+            let workflow_request = SpawnWorkflowRequest {
+                agent_id: workflow_agent_id.clone(),
+                spec: workflow_spec,
+                selected_models,
+                image,
+                container_name,
+                workspace_mounts: request_workspace_mounts,
                 boot_message,
                 lifecycle_mode,
                 task,
-            )
-            .await
+            };
+            if let Err(error) =
+                run_spawn_workflow(&registry, &spawner, root_config.as_ref(), workflow_request)
+                    .await
             {
                 registry.append_progress(
                     &workflow_agent_id,
@@ -564,22 +592,25 @@ async fn run_spawn_workflow(
     registry: &SpawnedAgentRegistry,
     spawner: &DockerAgentSpawner,
     root_config: &Config,
-    agent_id: &str,
-    spec: &AgentSpec,
-    selected_models: &SelectedModelPlan,
-    image: &str,
-    container_name: &str,
-    workspace_mounts: Vec<AgentWorkspaceMount>,
-    boot_message: String,
-    lifecycle_mode: LifecycleMode,
-    task: String,
+    request: SpawnWorkflowRequest,
 ) -> Result<()> {
-    let distributed_backend = worker_plane_enabled(&root_config.worker_plane);
-    registry.append_progress(agent_id, "drafted", "AgentSpec drafted");
-    let materialized = materialize_agent(
-        root_config,
+    let SpawnWorkflowRequest {
+        agent_id,
         spec,
         selected_models,
+        image,
+        container_name,
+        workspace_mounts,
+        boot_message,
+        lifecycle_mode,
+        task,
+    } = request;
+    let distributed_backend = worker_plane_enabled(&root_config.worker_plane);
+    registry.append_progress(&agent_id, "drafted", "AgentSpec drafted");
+    let materialized = materialize_agent(
+        root_config,
+        &spec,
+        &selected_models,
         workspace_mounts.as_slice(),
     )
     .await?;
@@ -639,7 +670,7 @@ async fn run_spawn_workflow(
     .await?;
 
     registry.append_progress(
-        agent_id,
+        &agent_id,
         "materialized",
         format!("Profile rendered into {}", materialized.spec_dir.display()),
     );
@@ -699,7 +730,7 @@ async fn run_spawn_workflow(
     let spawn_plan_path =
         write_distributed_spawn_plan(&materialized.agent_home, &spawn_plan).await?;
     registry.append_progress(
-        agent_id,
+        &agent_id,
         "bootstrap_queued",
         "Initial mission persisted for container runtime",
     );
@@ -757,19 +788,20 @@ async fn run_spawn_workflow(
         )
         .await?;
         registry.append_progress(
-            agent_id,
+            &agent_id,
             "spec_uploaded",
-            format!("Uploaded AgentSpec to {}", spawn_plan.artifact_refs.spec_ref),
+            format!(
+                "Uploaded AgentSpec to {}",
+                spawn_plan.artifact_refs.spec_ref
+            ),
         );
 
-        let bootstrap_bytes = fs::read(&boot_request_path)
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to read bootstrap request from {}",
-                    boot_request_path.display()
-                )
-            })?;
+        let bootstrap_bytes = fs::read(&boot_request_path).await.with_context(|| {
+            format!(
+                "Failed to read bootstrap request from {}",
+                boot_request_path.display()
+            )
+        })?;
         upload_bytes_to_artifact_ref(
             &root_config.worker_plane,
             &spawn_plan.artifact_refs.bootstrap_ref,
@@ -777,7 +809,7 @@ async fn run_spawn_workflow(
         )
         .await?;
         registry.append_progress(
-            agent_id,
+            &agent_id,
             "bootstrap_uploaded",
             format!(
                 "Uploaded bootstrap request to {}",
@@ -794,22 +826,22 @@ async fn run_spawn_workflow(
         )
         .await?;
         registry.append_progress(
-            agent_id,
+            &agent_id,
             "published",
             format!(
                 "Spawn plan staged for worker-plane on topics {} / {}",
                 spawn_plan.topics.command_topic, spawn_plan.topics.event_topic
             ),
         );
-        registry.clear_handle(agent_id);
+        registry.clear_handle(&agent_id);
         return Ok(());
     }
 
-    registry.append_progress(agent_id, "container_start", "Starting Docker service");
+    registry.append_progress(&agent_id, "container_start", "Starting Docker service");
 
     let container_id = spawner.spawn_service(&spawn_request).await?;
-    registry.mark_service_running(agent_id, container_id.clone());
-    registry.append_progress(agent_id, "container_running", "Docker service is running");
+    registry.mark_service_running(&agent_id, container_id.clone());
+    registry.append_progress(&agent_id, "container_running", "Docker service is running");
     write_event(
         &materialized.agent_home,
         "AgentSpawned",
@@ -826,31 +858,31 @@ async fn run_spawn_workflow(
     )
     .await?;
 
-    registry.mark_task_running(agent_id);
+    registry.mark_task_running(&agent_id);
     registry.append_progress(
-        agent_id,
+        &agent_id,
         "bootstrap_task",
         "Waiting for initial mission result",
     );
 
     match wait_for_initial_mission(
         spawner,
-        container_name,
+        &container_name,
         &materialized.runtime_state_path,
         &materialized.bootstrap_result_path,
         registry,
-        agent_id,
+        &agent_id,
     )
     .await
     {
         Ok(output) => {
-            registry.append_progress(agent_id, "completed", "Initial mission completed");
+            registry.append_progress(&agent_id, "completed", "Initial mission completed");
             let result = ToolResult {
                 success: true,
                 output: output.clone(),
                 error: None,
             };
-            registry.complete_task(agent_id, result);
+            registry.complete_task(&agent_id, result);
             write_event(
                 &materialized.agent_home,
                 "AgentCompleted",
@@ -866,8 +898,8 @@ async fn run_spawn_workflow(
             .await?;
 
             if matches!(lifecycle_mode, LifecycleMode::Ephemeral) {
-                spawner.terminate_service(container_name).await?;
-                registry.mark_service_state(agent_id, SpawnedAgentServiceState::Terminated);
+                spawner.terminate_service(&container_name).await?;
+                registry.mark_service_state(&agent_id, SpawnedAgentServiceState::Terminated);
                 write_event(
                     &materialized.agent_home,
                     "AgentTerminated",
@@ -882,11 +914,11 @@ async fn run_spawn_workflow(
         }
         Err(error) => {
             registry.append_progress(
-                agent_id,
+                &agent_id,
                 "task_failed",
                 format!("Initial mission failed: {error}"),
             );
-            registry.fail_task(agent_id, error.to_string());
+            registry.fail_task(&agent_id, error.to_string());
             write_event(
                 &materialized.agent_home,
                 "AgentSpawnFailed",
@@ -1696,21 +1728,22 @@ fn desired_local_hints(task_profile: TaskProfile, vision_available: bool) -> Vec
     hints
 }
 
-fn build_agent_spec(
-    agent_id: &str,
-    display_name: &str,
-    pack: &PackProfile,
-    task_profile: TaskProfile,
-    lifecycle_mode: LifecycleMode,
-    image: String,
-    workspace_mounts: &[AgentWorkspaceMountSpec],
-    selected_models: &SelectedModelPlan,
-    initial_mission: String,
-    network: String,
-    memory_limit_mb: Option<u64>,
-    cpu_limit: Option<f64>,
-    read_only_rootfs: bool,
-) -> AgentSpec {
+fn build_agent_spec(request: AgentSpecBuildRequest<'_>) -> AgentSpec {
+    let AgentSpecBuildRequest {
+        agent_id,
+        display_name,
+        pack,
+        task_profile,
+        lifecycle_mode,
+        image,
+        workspace_mounts,
+        selected_models,
+        initial_mission,
+        network,
+        memory_limit_mb,
+        cpu_limit,
+        read_only_rootfs,
+    } = request;
     let persona = AgentPersonaSpec {
         role: pack.role.clone(),
         mission: initial_mission
@@ -2281,12 +2314,11 @@ mod tests {
                 return parsed;
             }
 
-            if Instant::now() >= deadline {
-                panic!(
-                    "timed out waiting for terminal task state for {agent_id}; last status: {}",
-                    serde_json::to_string_pretty(&parsed).unwrap_or_default()
-                );
-            }
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for terminal task state for {agent_id}; last status: {}",
+                serde_json::to_string_pretty(&parsed).unwrap_or_default()
+            );
 
             sleep(Duration::from_secs(1)).await;
         }
@@ -2362,21 +2394,21 @@ mod tests {
             local_routes: Vec::new(),
             rationale: "because capability > cost > latency".into(),
         };
-        let spec = build_agent_spec(
-            "agent-1",
-            "Finance Specialist",
-            &pack,
-            TaskProfile::DocumentAnalysis,
-            LifecycleMode::Dedicated,
-            "ghcr.io/nauron-ai/labaclaw:dev".into(),
-            &[],
-            &selected,
-            "Analyze the task".into(),
-            "bridge".into(),
-            Some(512),
-            Some(1.0),
-            true,
-        );
+        let spec = build_agent_spec(AgentSpecBuildRequest {
+            agent_id: "agent-1",
+            display_name: "Finance Specialist",
+            pack: &pack,
+            task_profile: TaskProfile::DocumentAnalysis,
+            lifecycle_mode: LifecycleMode::Dedicated,
+            image: "ghcr.io/nauron-ai/labaclaw:dev".into(),
+            workspace_mounts: &[],
+            selected_models: &selected,
+            initial_mission: "Analyze the task".into(),
+            network: "bridge".into(),
+            memory_limit_mb: Some(512),
+            cpu_limit: Some(1.0),
+            read_only_rootfs: true,
+        });
         let user_md = render_user_md(&spec);
         assert!(user_md.contains("Direct user: orchestrator"));
         assert!(user_md.contains("Indirect user: human_via_orchestrator"));
@@ -2400,25 +2432,26 @@ mod tests {
             &[],
         );
         let selected = select_models(&config, TaskProfile::DeepReasoning).unwrap();
-        let spec = build_agent_spec(
-            "agent-2",
-            "Finance Specialist",
-            &pack,
-            TaskProfile::DeepReasoning,
-            LifecycleMode::Dedicated,
-            "ghcr.io/nauron-ai/labaclaw:dev".into(),
-            &[AgentWorkspaceMountSpec {
-                host_path: config.workspace_dir.display().to_string(),
-                container_path: "/mounted-workspaces/0".into(),
-                read_only: true,
-            }],
-            &selected,
-            "Analyze invoices".into(),
-            "bridge".into(),
-            Some(512),
-            Some(1.0),
-            true,
-        );
+        let mounts = [AgentWorkspaceMountSpec {
+            host_path: config.workspace_dir.display().to_string(),
+            container_path: "/mounted-workspaces/0".into(),
+            read_only: true,
+        }];
+        let spec = build_agent_spec(AgentSpecBuildRequest {
+            agent_id: "agent-2",
+            display_name: "Finance Specialist",
+            pack: &pack,
+            task_profile: TaskProfile::DeepReasoning,
+            lifecycle_mode: LifecycleMode::Dedicated,
+            image: "ghcr.io/nauron-ai/labaclaw:dev".into(),
+            workspace_mounts: &mounts,
+            selected_models: &selected,
+            initial_mission: "Analyze invoices".into(),
+            network: "bridge".into(),
+            memory_limit_mb: Some(512),
+            cpu_limit: Some(1.0),
+            read_only_rootfs: true,
+        });
         let materialized = materialize_agent(
             &config,
             &spec,
@@ -2470,26 +2503,26 @@ mod tests {
             &[],
         );
         let selected = select_models(&config, TaskProfile::DeepReasoning).unwrap();
-        let spec = build_agent_spec(
-            "agent-ollama-local",
-            "Finance Specialist",
-            &pack,
-            TaskProfile::DeepReasoning,
-            LifecycleMode::Dedicated,
-            "ghcr.io/nauron-ai/labaclaw:dev".into(),
-            &[AgentWorkspaceMountSpec {
-                host_path: config.workspace_dir.display().to_string(),
-                container_path: "/mounted-workspaces/0".into(),
-                read_only: true,
-            }],
-            &selected,
-            "Analyze margin".into(),
-            "bridge".into(),
-            Some(512),
-            Some(1.0),
-            true,
-        );
-
+        let mounts = [AgentWorkspaceMountSpec {
+            host_path: config.workspace_dir.display().to_string(),
+            container_path: "/mounted-workspaces/0".into(),
+            read_only: true,
+        }];
+        let spec = build_agent_spec(AgentSpecBuildRequest {
+            agent_id: "agent-ollama-local",
+            display_name: "Finance Specialist",
+            pack: &pack,
+            task_profile: TaskProfile::DeepReasoning,
+            lifecycle_mode: LifecycleMode::Dedicated,
+            image: "ghcr.io/nauron-ai/labaclaw:dev".into(),
+            workspace_mounts: &mounts,
+            selected_models: &selected,
+            initial_mission: "Analyze margin".into(),
+            network: "bridge".into(),
+            memory_limit_mb: Some(512),
+            cpu_limit: Some(1.0),
+            read_only_rootfs: true,
+        });
         let materialized = materialize_agent(
             &config,
             &spec,

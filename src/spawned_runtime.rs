@@ -1,5 +1,5 @@
-use crate::{agent::Agent, Config};
 use crate::worker_plane::{local_file_ref, summarize_text_for_event};
+use crate::{agent::Agent, Config};
 use anyhow::{Context, Result};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};

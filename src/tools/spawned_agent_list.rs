@@ -54,7 +54,11 @@ impl Tool for SpawnedAgentListTool {
         }
 
         for mut snapshot in discover_all_status_snapshots(&self.labaclaw_dir)? {
-            if let Some(state) = self.spawner.inspect_service(&snapshot.container_name).await? {
+            if let Some(state) = self
+                .spawner
+                .inspect_service(&snapshot.container_name)
+                .await?
+            {
                 snapshot.service_state = match state.state.as_str() {
                     "running" => SpawnedAgentServiceState::Running,
                     "exited" | "dead" => SpawnedAgentServiceState::Terminated,
@@ -63,19 +67,21 @@ impl Tool for SpawnedAgentListTool {
                 };
                 snapshot.container_id = Some(state.container_id);
             }
-            merged.entry(snapshot.agent_id.clone()).or_insert_with(|| SpawnedAgentSummary {
-                agent_id: snapshot.agent_id,
-                display_name: snapshot.display_name,
-                pack_id: snapshot.pack_id,
-                task_profile: snapshot.task_profile,
-                lifecycle_mode: snapshot.lifecycle_mode,
-                primary_provider: snapshot.primary_provider,
-                primary_model: snapshot.primary_model,
-                service_state: snapshot.service_state.as_str().to_string(),
-                task_state: snapshot.task_state.as_str().to_string(),
-                started_at: snapshot.started_at.to_rfc3339(),
-                updated_at: snapshot.updated_at.to_rfc3339(),
-            });
+            merged
+                .entry(snapshot.agent_id.clone())
+                .or_insert_with(|| SpawnedAgentSummary {
+                    agent_id: snapshot.agent_id,
+                    display_name: snapshot.display_name,
+                    pack_id: snapshot.pack_id,
+                    task_profile: snapshot.task_profile,
+                    lifecycle_mode: snapshot.lifecycle_mode,
+                    primary_provider: snapshot.primary_provider,
+                    primary_model: snapshot.primary_model,
+                    service_state: snapshot.service_state.as_str().to_string(),
+                    task_state: snapshot.task_state.as_str().to_string(),
+                    started_at: snapshot.started_at.to_rfc3339(),
+                    updated_at: snapshot.updated_at.to_rfc3339(),
+                });
         }
 
         Ok(ToolResult {

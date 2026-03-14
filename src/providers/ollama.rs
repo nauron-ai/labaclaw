@@ -783,7 +783,12 @@ impl Provider for OllamaProvider {
                         normalized_model
                     );
                     return self
-                        .prompt_guided_tools_fallback(messages, tools, &normalized_model, temperature)
+                        .prompt_guided_tools_fallback(
+                            messages,
+                            tools,
+                            &normalized_model,
+                            temperature,
+                        )
                         .await;
                 }
                 return Err(error);

@@ -1,5 +1,5 @@
-use anyhow::{Context, Result};
 use crate::tools::traits::ToolResult;
+use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use parking_lot::RwLock;
 use serde_json::Value;
@@ -323,7 +323,9 @@ pub fn discover_status_snapshot(
     Ok(Some(load_snapshot_from_agent_home(&agent_home)?))
 }
 
-pub fn discover_all_status_snapshots(labaclaw_dir: &Path) -> Result<Vec<SpawnedAgentStatusSnapshot>> {
+pub fn discover_all_status_snapshots(
+    labaclaw_dir: &Path,
+) -> Result<Vec<SpawnedAgentStatusSnapshot>> {
     let root = spawned_agents_dir(labaclaw_dir);
     if !root.exists() {
         return Ok(Vec::new());
@@ -374,10 +376,13 @@ fn load_snapshot_from_agent_home(agent_home: &Path) -> Result<SpawnedAgentStatus
             .map(|value| value.to_string_lossy().into_owned())
             .unwrap_or_else(|| "unknown".into())
     });
-    let lifecycle_mode = json_string(&spec, &["lifecycle_mode"]).unwrap_or_else(|| "dedicated".into());
-    let task_state = parse_task_state(runtime_state.as_ref().and_then(|value| {
-        json_string(value, &["task_status"])
-    }));
+    let lifecycle_mode =
+        json_string(&spec, &["lifecycle_mode"]).unwrap_or_else(|| "dedicated".into());
+    let task_state = parse_task_state(
+        runtime_state
+            .as_ref()
+            .and_then(|value| json_string(value, &["task_status"])),
+    );
     let service_state = parse_service_state(
         runtime_state
             .as_ref()
@@ -395,7 +400,11 @@ fn load_snapshot_from_agent_home(agent_home: &Path) -> Result<SpawnedAgentStatus
         runtime_state
             .as_ref()
             .and_then(|value| json_string(value, &["updated_at"]))
-            .or_else(|| runtime_state.as_ref().and_then(|value| json_string(value, &["last_heartbeat_at"])))
+            .or_else(|| {
+                runtime_state
+                    .as_ref()
+                    .and_then(|value| json_string(value, &["last_heartbeat_at"]))
+            })
             .or_else(|| json_string(&spec, &["created_at"])),
     );
     let completed_at = runtime_state
@@ -420,12 +429,16 @@ fn load_snapshot_from_agent_home(agent_home: &Path) -> Result<SpawnedAgentStatus
     Ok(SpawnedAgentStatusSnapshot {
         agent_id: agent_id.clone(),
         display_name: json_string(&spec, &["display_name"]).unwrap_or_else(|| agent_id.clone()),
-        owner_agent_id: json_string(&spec, &["owner_agent_id"]).unwrap_or_else(|| "orchestrator".into()),
+        owner_agent_id: json_string(&spec, &["owner_agent_id"])
+            .unwrap_or_else(|| "orchestrator".into()),
         pack_id: json_string(&spec, &["pack_id"]).unwrap_or_else(|| "general_specialist".into()),
-        task_profile: json_string(&spec, &["task_profile"]).unwrap_or_else(|| "fast_conversational".into()),
+        task_profile: json_string(&spec, &["task_profile"])
+            .unwrap_or_else(|| "fast_conversational".into()),
         lifecycle_mode,
-        primary_provider: json_string(&spec, &["primary_llm", "provider"]).unwrap_or_else(|| "unknown".into()),
-        primary_model: json_string(&spec, &["primary_llm", "model"]).unwrap_or_else(|| "unknown".into()),
+        primary_provider: json_string(&spec, &["primary_llm", "provider"])
+            .unwrap_or_else(|| "unknown".into()),
+        primary_model: json_string(&spec, &["primary_llm", "model"])
+            .unwrap_or_else(|| "unknown".into()),
         local_route_hints,
         task: json_string(&spec, &["initial_mission"]).unwrap_or_default(),
         config_dir: agent_home.to_path_buf(),
@@ -457,7 +470,9 @@ fn latest_agent_spec_path(agent_home: &Path) -> Result<PathBuf> {
         .filter(|path| path.exists())
         .collect::<Vec<_>>();
     spec_paths.sort();
-    spec_paths.pop().context("No versioned agent-spec.json found")
+    spec_paths
+        .pop()
+        .context("No versioned agent-spec.json found")
 }
 
 fn read_json(path: &Path) -> Result<Value> {

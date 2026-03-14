@@ -1,18 +1,21 @@
 use crate::config::WorkerPlaneConfig;
 use anyhow::{Context, Result};
 use chrono::Utc;
-use object_store::aws::AmazonS3Builder;
-use object_store::path::Path as ObjectStorePath;
-use object_store::ObjectStore;
-use rdkafka::config::ClientConfig;
-use rdkafka::message::{Header, OwnedHeaders};
-use rdkafka::producer::{FutureProducer, FutureRecord};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use tokio::fs;
-use tokio::time::Duration;
+#[cfg(feature = "worker-plane-distributed")]
+use {
+    object_store::aws::AmazonS3Builder,
+    object_store::path::Path as ObjectStorePath,
+    object_store::ObjectStore,
+    rdkafka::config::ClientConfig,
+    rdkafka::message::{Header, OwnedHeaders},
+    rdkafka::producer::{FutureProducer, FutureRecord},
+    std::sync::Arc,
+    tokio::time::Duration,
+};
 
 const CONTROL_PLANE_DIR: &str = "control-plane";
 const DISTRIBUTED_SPAWN_PLAN_FILE: &str = "spawn-plan.json";
@@ -64,8 +67,18 @@ pub struct DistributedSpawnPlan {
     pub worker_namespace: String,
 }
 
+pub const DISTRIBUTED_WORKER_PLANE_FEATURE: &str = "worker-plane-distributed";
+
+pub const DISTRIBUTED_SUPPORT_ERROR: &str = "worker-plane distributed transport is not compiled in; rebuild with feature 'worker-plane-distributed'";
+
+pub fn distributed_support_compiled() -> bool {
+    cfg!(feature = "worker-plane-distributed")
+}
+
 pub fn worker_plane_enabled(config: &WorkerPlaneConfig) -> bool {
-    config.enabled && config.mode.trim().eq_ignore_ascii_case("redpanda_k8s")
+    config.enabled
+        && config.mode.trim().eq_ignore_ascii_case("redpanda_k8s")
+        && distributed_support_compiled()
 }
 
 pub fn local_file_ref(path: &Path) -> String {
@@ -88,8 +101,10 @@ pub fn build_artifact_refs(
         &prefix,
         &format!("bootstrap/{agent_id}/{request_id}/request.json"),
     );
-    let result_key =
-        join_object_key(&prefix, &format!("results/{agent_id}/{request_id}/result.md"));
+    let result_key = join_object_key(
+        &prefix,
+        &format!("results/{agent_id}/{request_id}/result.md"),
+    );
     let artifacts_prefix_key =
         join_object_key(&prefix, &format!("artifacts/{agent_id}/{request_id}/"));
     let questions_prefix_key =
@@ -240,29 +255,47 @@ pub async fn upload_bytes_to_artifact_ref(
     artifact_ref: &str,
     bytes: Vec<u8>,
 ) -> Result<()> {
-    let (_bucket, key) = parse_s3_uri(artifact_ref)?;
-    let store = build_artifact_store(config)?;
-    store
-        .put(&ObjectStorePath::from(key), bytes.into())
-        .await
-        .with_context(|| format!("Failed to upload artifact to {artifact_ref}"))?;
-    Ok(())
+    #[cfg(not(feature = "worker-plane-distributed"))]
+    {
+        let _ = (config, artifact_ref, bytes);
+        anyhow::bail!(DISTRIBUTED_SUPPORT_ERROR);
+    }
+
+    #[cfg(feature = "worker-plane-distributed")]
+    {
+        let (_bucket, key) = parse_s3_uri(artifact_ref)?;
+        let store = build_artifact_store(config)?;
+        store
+            .put(&ObjectStorePath::from(key), bytes.into())
+            .await
+            .with_context(|| format!("Failed to upload artifact to {artifact_ref}"))?;
+        Ok(())
+    }
 }
 
 pub async fn download_bytes_from_artifact_ref(
     config: &WorkerPlaneConfig,
     artifact_ref: &str,
 ) -> Result<Vec<u8>> {
-    let (_, key) = parse_s3_uri(artifact_ref)?;
-    let store = build_artifact_store(config)?;
-    let bytes = store
-        .get(&ObjectStorePath::from(key))
-        .await
-        .with_context(|| format!("Failed to fetch artifact from {artifact_ref}"))?
-        .bytes()
-        .await
-        .with_context(|| format!("Failed to read artifact bytes from {artifact_ref}"))?;
-    Ok(bytes.to_vec())
+    #[cfg(not(feature = "worker-plane-distributed"))]
+    {
+        let _ = (config, artifact_ref);
+        anyhow::bail!(DISTRIBUTED_SUPPORT_ERROR);
+    }
+
+    #[cfg(feature = "worker-plane-distributed")]
+    {
+        let (_, key) = parse_s3_uri(artifact_ref)?;
+        let store = build_artifact_store(config)?;
+        let bytes = store
+            .get(&ObjectStorePath::from(key))
+            .await
+            .with_context(|| format!("Failed to fetch artifact from {artifact_ref}"))?
+            .bytes()
+            .await
+            .with_context(|| format!("Failed to read artifact bytes from {artifact_ref}"))?;
+        Ok(bytes.to_vec())
+    }
 }
 
 pub async fn publish_json_message(
@@ -272,29 +305,39 @@ pub async fn publish_json_message(
     agent_id: &str,
     payload: &serde_json::Value,
 ) -> Result<()> {
-    let producer = build_producer(config)?;
-    let serialized =
-        serde_json::to_string(payload).context("Failed to serialize worker-plane payload")?;
-    let headers = OwnedHeaders::new().insert(Header {
-        key: MESSAGE_TYPE_HEADER,
-        value: Some(message_type),
-    });
-    producer
-        .send(
-            FutureRecord::to(topic)
-                .payload(&serialized)
-                .key(agent_id)
-                .headers(headers),
-            Duration::from_secs(10),
-        )
-        .await
-        .map_err(|(error, _message)| error)
-        .with_context(|| {
-            format!("Failed to publish {message_type} for agent {agent_id} to topic {topic}")
-        })?;
-    Ok(())
+    #[cfg(not(feature = "worker-plane-distributed"))]
+    {
+        let _ = (config, topic, message_type, agent_id, payload);
+        anyhow::bail!(DISTRIBUTED_SUPPORT_ERROR);
+    }
+
+    #[cfg(feature = "worker-plane-distributed")]
+    {
+        let producer = build_producer(config)?;
+        let serialized =
+            serde_json::to_string(payload).context("Failed to serialize worker-plane payload")?;
+        let headers = OwnedHeaders::new().insert(Header {
+            key: MESSAGE_TYPE_HEADER,
+            value: Some(message_type),
+        });
+        producer
+            .send(
+                FutureRecord::to(topic)
+                    .payload(&serialized)
+                    .key(agent_id)
+                    .headers(headers),
+                Duration::from_secs(10),
+            )
+            .await
+            .map_err(|(error, _message)| error)
+            .with_context(|| {
+                format!("Failed to publish {message_type} for agent {agent_id} to topic {topic}")
+            })?;
+        Ok(())
+    }
 }
 
+#[cfg(feature = "worker-plane-distributed")]
 fn build_producer(config: &WorkerPlaneConfig) -> Result<FutureProducer> {
     let brokers = config.redpanda.brokers.join(",");
     if brokers.trim().is_empty() {
@@ -307,6 +350,7 @@ fn build_producer(config: &WorkerPlaneConfig) -> Result<FutureProducer> {
         .context("Failed to build Redpanda producer for worker-plane")
 }
 
+#[cfg(feature = "worker-plane-distributed")]
 fn build_artifact_store(config: &WorkerPlaneConfig) -> Result<Arc<dyn ObjectStore>> {
     let mut builder = AmazonS3Builder::new()
         .with_bucket_name(&config.artifacts.bucket)
@@ -350,7 +394,11 @@ pub fn parse_s3_uri(uri: &str) -> Result<(String, String)> {
 }
 
 fn s3_uri(bucket: &str, object_key: &str) -> String {
-    format!("s3://{}/{}", bucket.trim_matches('/'), object_key.trim_start_matches('/'))
+    format!(
+        "s3://{}/{}",
+        bucket.trim_matches('/'),
+        object_key.trim_start_matches('/')
+    )
 }
 
 fn normalize_prefix(prefix: &str) -> String {
@@ -437,6 +485,9 @@ mod tests {
         config.enabled = true;
         assert!(!worker_plane_enabled(&config));
         config.mode = "redpanda_k8s".into();
-        assert!(worker_plane_enabled(&config));
+        assert_eq!(
+            worker_plane_enabled(&config),
+            distributed_support_compiled()
+        );
     }
 }

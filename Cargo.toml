@@ -59,8 +59,8 @@ schemars = "1.2"
 # Logging - minimal
 tracing = { version = "0.1", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "chrono"] }
-rdkafka = { version = "0.37", features = ["tokio", "cmake-build"] }
-object_store = { version = "0.12", features = ["aws"] }
+rdkafka = { version = "0.37", optional = true, default-features = false, features = ["tokio", "cmake-build", "libz"] }
+object_store = { version = "0.12", optional = true, features = ["aws"] }
 
 # Observability - Prometheus metrics
 prometheus = { version = "0.14", default-features = false }
@@ -268,6 +268,7 @@ whatsapp-web = ["dep:wa-rs", "dep:wa-rs-core", "dep:wa-rs-binary", "dep:wa-rs-pr
 # Keep disabled by default to preserve current runtime behavior.
 firecrawl = []
 web-fetch-html2md = ["dep:html2md"]
+worker-plane-distributed = ["dep:rdkafka", "dep:object_store"]
 
 [profile.release]
 opt-level = "z"      # Optimize for size
