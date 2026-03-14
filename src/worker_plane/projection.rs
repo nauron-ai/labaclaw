@@ -1,6 +1,7 @@
 use crate::config::Config;
 #[cfg(feature = "worker-plane-distributed")]
 use crate::spawned_runtime::{bootstrap_result_path, update_external_runtime_state};
+#[cfg(feature = "worker-plane-distributed")]
 use crate::worker_plane::worker_plane_enabled;
 #[cfg(feature = "worker-plane-distributed")]
 use crate::worker_plane::{download_bytes_from_artifact_ref, local_file_ref, MESSAGE_TYPE_HEADER};
