@@ -8,6 +8,7 @@ use directories::UserDirs;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
+use std::fmt;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::{OnceLock, RwLock};
@@ -319,6 +320,10 @@ pub struct Config {
     /// Runtime adapter configuration (`[runtime]`). Controls native vs Docker execution.
     #[serde(default)]
     pub runtime: RuntimeConfig,
+
+    /// Distributed worker-plane settings (`[worker_plane]`).
+    #[serde(default)]
+    pub worker_plane: WorkerPlaneConfig,
 
     /// Research phase configuration (`[research]`). Proactive information gathering.
     #[serde(default)]
@@ -652,6 +657,8 @@ impl std::fmt::Debug for Config {
             .field("default_temperature", &self.default_temperature)
             .field("model_routes_count", &self.model_routes.len())
             .field("embedding_routes_count", &self.embedding_routes.len())
+            .field("worker_plane_enabled", &self.worker_plane.enabled)
+            .field("worker_plane_mode", &self.worker_plane.mode)
             .field("delegate_agents", &delegate_agent_ids)
             .field("cli_channel_enabled", &self.channels_config.cli)
             .field("enabled_channels_count", &enabled_channel_count)
@@ -3923,6 +3930,118 @@ pub struct RuntimeConfig {
     pub reasoning_level: Option<String>,
 }
 
+/// Distributed worker-plane configuration (`[worker_plane]` section).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct WorkerPlaneConfig {
+    /// Enable the production worker-plane path.
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Delivery backend for spawned agents (`local_docker` or `redpanda_k8s`).
+    #[serde(default = "default_worker_plane_mode")]
+    pub mode: String,
+
+    /// Redpanda/Kafka command and event transport.
+    #[serde(default)]
+    pub redpanda: WorkerPlaneRedpandaConfig,
+
+    /// RustFS/S3 artifact store for specs, requests, results, and bundles.
+    #[serde(default)]
+    pub artifacts: WorkerPlaneArtifactsConfig,
+
+    /// Logical Kubernetes placement for dedicated worker Deployments.
+    #[serde(default)]
+    pub kubernetes: WorkerPlaneKubernetesConfig,
+}
+
+/// Redpanda connection and topic layout for the worker-plane.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct WorkerPlaneRedpandaConfig {
+    /// Bootstrap brokers exposed to `claw`.
+    #[serde(default)]
+    pub brokers: Vec<String>,
+
+    /// Topic that carries spawn/task commands from orchestrator to worker-plane.
+    #[serde(default = "default_worker_plane_command_topic")]
+    pub command_topic: String,
+
+    /// Topic that carries worker lifecycle/result events back to orchestrator.
+    #[serde(default = "default_worker_plane_event_topic")]
+    pub event_topic: String,
+
+    /// Topic that carries heartbeats for active dedicated agents.
+    #[serde(default = "default_worker_plane_heartbeat_topic")]
+    pub heartbeat_topic: String,
+
+    /// Consumer group used by `claw` projections.
+    #[serde(default = "default_worker_plane_projection_group")]
+    pub projection_consumer_group: String,
+}
+
+/// RustFS/S3 layout for worker-plane artifacts.
+#[derive(Clone, Serialize, Deserialize, JsonSchema)]
+pub struct WorkerPlaneArtifactsConfig {
+    /// RustFS S3 endpoint reachable from `claw`.
+    #[serde(default)]
+    pub endpoint: Option<String>,
+
+    /// S3 region label used by the client.
+    #[serde(default = "default_worker_plane_artifact_region")]
+    pub region: String,
+
+    /// Force path-style addressing for RustFS-compatible endpoints.
+    #[serde(default = "default_true")]
+    pub force_path_style: bool,
+
+    /// Bucket used for all orchestrator/worker artifacts.
+    #[serde(default = "default_worker_plane_artifact_bucket")]
+    pub bucket: String,
+
+    /// Object key prefix under the bucket.
+    #[serde(default = "default_worker_plane_artifact_prefix")]
+    pub prefix: String,
+
+    /// Optional access key for the artifact store.
+    #[serde(default)]
+    pub access_key: Option<String>,
+
+    /// Optional secret key for the artifact store.
+    #[serde(default)]
+    pub secret_key: Option<String>,
+}
+
+impl fmt::Debug for WorkerPlaneArtifactsConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WorkerPlaneArtifactsConfig")
+            .field("endpoint", &self.endpoint)
+            .field("region", &self.region)
+            .field("force_path_style", &self.force_path_style)
+            .field("bucket", &self.bucket)
+            .field("prefix", &self.prefix)
+            .field(
+                "access_key",
+                &self.access_key.as_ref().map(|_| "<redacted>"),
+            )
+            .field(
+                "secret_key",
+                &self.secret_key.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
+}
+
+/// Kubernetes placement metadata for dedicated worker Deployments.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct WorkerPlaneKubernetesConfig {
+    /// Namespace where dedicated workers are created.
+    #[serde(default = "default_worker_plane_namespace")]
+    pub namespace: String,
+
+    /// Service account name used by the worker-plane factory.
+    #[serde(default = "default_worker_plane_service_account")]
+    pub service_account: String,
+}
+
 /// Docker runtime configuration (`[runtime.docker]` section).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DockerRuntimeConfig {
@@ -4052,6 +4171,136 @@ fn default_runtime_kind() -> String {
     "native".into()
 }
 
+fn default_worker_plane_mode() -> String {
+    "local_docker".into()
+}
+
+fn is_valid_worker_plane_mode(mode: &str) -> bool {
+    matches!(mode, "local_docker" | "redpanda_k8s")
+}
+
+fn validate_worker_plane_config(config: &WorkerPlaneConfig) -> Result<()> {
+    if !config.enabled {
+        return Ok(());
+    }
+
+    let mode_raw = config.mode.as_str();
+    let mode = mode_raw.trim();
+    if mode_raw != mode {
+        anyhow::bail!("worker_plane.mode must not include leading or trailing whitespace");
+    }
+    if !is_valid_worker_plane_mode(mode) {
+        anyhow::bail!(
+            "worker_plane.mode must be one of: local_docker, redpanda_k8s (got '{mode}')"
+        );
+    }
+
+    if mode == "redpanda_k8s" {
+        if config.redpanda.brokers.is_empty() {
+            anyhow::bail!(
+                "worker_plane.redpanda.brokers must contain at least one broker when worker_plane.mode='redpanda_k8s'"
+            );
+        }
+        for (index, raw_broker) in config.redpanda.brokers.iter().enumerate() {
+            let broker = raw_broker.trim();
+            if broker.is_empty() {
+                anyhow::bail!(
+                    "worker_plane.redpanda.brokers[{index}] must not be empty when worker_plane.mode='redpanda_k8s'"
+                );
+            }
+            if raw_broker != broker {
+                anyhow::bail!(
+                    "worker_plane.redpanda.brokers[{index}] must not include leading or trailing whitespace when worker_plane.mode='redpanda_k8s'"
+                );
+            }
+        }
+        for (field_name, raw_value) in [
+            (
+                "worker_plane.redpanda.command_topic",
+                config.redpanda.command_topic.as_str(),
+            ),
+            (
+                "worker_plane.redpanda.event_topic",
+                config.redpanda.event_topic.as_str(),
+            ),
+            (
+                "worker_plane.redpanda.heartbeat_topic",
+                config.redpanda.heartbeat_topic.as_str(),
+            ),
+            (
+                "worker_plane.redpanda.projection_consumer_group",
+                config.redpanda.projection_consumer_group.as_str(),
+            ),
+            (
+                "worker_plane.artifacts.bucket",
+                config.artifacts.bucket.as_str(),
+            ),
+            (
+                "worker_plane.artifacts.region",
+                config.artifacts.region.as_str(),
+            ),
+            (
+                "worker_plane.kubernetes.namespace",
+                config.kubernetes.namespace.as_str(),
+            ),
+            (
+                "worker_plane.kubernetes.service_account",
+                config.kubernetes.service_account.as_str(),
+            ),
+        ] {
+            let value = raw_value.trim();
+            if value.is_empty() {
+                anyhow::bail!(
+                    "{field_name} must not be empty when worker_plane.mode='redpanda_k8s'"
+                );
+            }
+            if raw_value != value {
+                anyhow::bail!(
+                    "{field_name} must not include leading or trailing whitespace when worker_plane.mode='redpanda_k8s'"
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn default_worker_plane_command_topic() -> String {
+    "agent.command.v1".into()
+}
+
+fn default_worker_plane_event_topic() -> String {
+    "agent.event.v1".into()
+}
+
+fn default_worker_plane_heartbeat_topic() -> String {
+    "agent.heartbeat.v1".into()
+}
+
+fn default_worker_plane_projection_group() -> String {
+    "claw-projections".into()
+}
+
+fn default_worker_plane_artifact_region() -> String {
+    "us-east-1".into()
+}
+
+fn default_worker_plane_artifact_bucket() -> String {
+    "labaclaw-artifacts".into()
+}
+
+fn default_worker_plane_artifact_prefix() -> String {
+    "labaclaw".into()
+}
+
+fn default_worker_plane_namespace() -> String {
+    "labaclaw-workers".into()
+}
+
+fn default_worker_plane_service_account() -> String {
+    "labaclaw-worker-plane".into()
+}
+
 fn default_docker_image() -> String {
     "alpine:3.20".into()
 }
@@ -4135,6 +4384,53 @@ impl Default for RuntimeConfig {
             wasm: WasmRuntimeConfig::default(),
             reasoning_enabled: None,
             reasoning_level: None,
+        }
+    }
+}
+
+impl Default for WorkerPlaneRedpandaConfig {
+    fn default() -> Self {
+        Self {
+            brokers: Vec::new(),
+            command_topic: default_worker_plane_command_topic(),
+            event_topic: default_worker_plane_event_topic(),
+            heartbeat_topic: default_worker_plane_heartbeat_topic(),
+            projection_consumer_group: default_worker_plane_projection_group(),
+        }
+    }
+}
+
+impl Default for WorkerPlaneArtifactsConfig {
+    fn default() -> Self {
+        Self {
+            endpoint: None,
+            region: default_worker_plane_artifact_region(),
+            force_path_style: true,
+            bucket: default_worker_plane_artifact_bucket(),
+            prefix: default_worker_plane_artifact_prefix(),
+            access_key: None,
+            secret_key: None,
+        }
+    }
+}
+
+impl Default for WorkerPlaneKubernetesConfig {
+    fn default() -> Self {
+        Self {
+            namespace: default_worker_plane_namespace(),
+            service_account: default_worker_plane_service_account(),
+        }
+    }
+}
+
+impl Default for WorkerPlaneConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            mode: default_worker_plane_mode(),
+            redpanda: WorkerPlaneRedpandaConfig::default(),
+            artifacts: WorkerPlaneArtifactsConfig::default(),
+            kubernetes: WorkerPlaneKubernetesConfig::default(),
         }
     }
 }
@@ -6781,6 +7077,7 @@ impl Default for Config {
             autonomy: AutonomyConfig::default(),
             security: SecurityConfig::default(),
             runtime: RuntimeConfig::default(),
+            worker_plane: WorkerPlaneConfig::default(),
             research: ResearchPhaseConfig::default(),
             reliability: ReliabilityConfig::default(),
             scheduler: SchedulerConfig::default(),
@@ -7937,6 +8234,14 @@ impl Config {
                 let secret_path = format!("config.model_providers.{profile_name}.api_key");
                 decrypt_optional_secret(&store, &mut profile.api_key, &secret_path)?;
             }
+            for (index, route) in config.model_routes.iter_mut().enumerate() {
+                let secret_path = format!("config.model_routes.{index}.api_key");
+                decrypt_optional_secret(&store, &mut route.api_key, &secret_path)?;
+            }
+            for (index, route) in config.embedding_routes.iter_mut().enumerate() {
+                let secret_path = format!("config.embedding_routes.{index}.api_key");
+                decrypt_optional_secret(&store, &mut route.api_key, &secret_path)?;
+            }
             decrypt_optional_secret(
                 &store,
                 &mut config.transcription.api_key,
@@ -7967,6 +8272,16 @@ impl Config {
                 &store,
                 &mut config.browser.computer_use.api_key,
                 "config.browser.computer_use.api_key",
+            )?;
+            decrypt_optional_secret(
+                &store,
+                &mut config.worker_plane.artifacts.access_key,
+                "config.worker_plane.artifacts.access_key",
+            )?;
+            decrypt_optional_secret(
+                &store,
+                &mut config.worker_plane.artifacts.secret_key,
+                "config.worker_plane.artifacts.secret_key",
             )?;
 
             decrypt_optional_secret(
@@ -8352,6 +8667,7 @@ impl Config {
             anyhow::bail!("gateway.host must not be empty");
         }
         normalize_dashboard_origin_list(&self.gateway.dashboard_allowed_origins)?;
+        validate_worker_plane_config(&self.worker_plane)?;
 
         // Reliability
         let configured_fallbacks = self
@@ -9739,6 +10055,112 @@ impl Config {
                 }
             }
         }
+
+        if let Some(flag) = env_value_any(&["LABACLAW_WORKER_PLANE_ENABLED"]) {
+            match flag.trim().to_ascii_lowercase().as_str() {
+                "1" | "true" | "yes" | "on" => self.worker_plane.enabled = true,
+                "0" | "false" | "no" | "off" => self.worker_plane.enabled = false,
+                _ => tracing::warn!(
+                    value = %flag,
+                    "Ignoring invalid LABACLAW_WORKER_PLANE_ENABLED override"
+                ),
+            }
+        }
+
+        if let Some(mode) = env_value_any(&["LABACLAW_WORKER_PLANE_MODE"]) {
+            let normalized = mode.trim();
+            if matches!(normalized, "local_docker" | "redpanda_k8s") {
+                self.worker_plane.mode = normalized.to_string();
+            } else {
+                tracing::warn!(
+                    value = %mode,
+                    "Ignoring invalid LABACLAW_WORKER_PLANE_MODE override"
+                );
+            }
+        }
+
+        if let Some(brokers) = env_value_any(&[
+            "LABACLAW_WORKER_PLANE_REDPANDA_BROKERS",
+            "LABACLAW_REDPANDA_BROKERS",
+        ]) {
+            self.worker_plane.redpanda.brokers = brokers
+                .split(',')
+                .map(str::trim)
+                .filter(|entry| !entry.is_empty())
+                .map(ToOwned::to_owned)
+                .collect();
+        }
+
+        if let Some(topic) = env_value_any(&["LABACLAW_WORKER_PLANE_COMMAND_TOPIC"]) {
+            self.worker_plane.redpanda.command_topic = topic;
+        }
+        if let Some(topic) = env_value_any(&["LABACLAW_WORKER_PLANE_EVENT_TOPIC"]) {
+            self.worker_plane.redpanda.event_topic = topic;
+        }
+        if let Some(topic) = env_value_any(&["LABACLAW_WORKER_PLANE_HEARTBEAT_TOPIC"]) {
+            self.worker_plane.redpanda.heartbeat_topic = topic;
+        }
+        if let Some(group) = env_value_any(&["LABACLAW_WORKER_PLANE_PROJECTION_GROUP"]) {
+            self.worker_plane.redpanda.projection_consumer_group = group;
+        }
+
+        if let Some(endpoint) = env_value_any(&[
+            "LABACLAW_WORKER_PLANE_RUSTFS_ENDPOINT",
+            "LABACLAW_RUSTFS_ENDPOINT",
+        ]) {
+            self.worker_plane.artifacts.endpoint = Some(endpoint);
+        }
+        if let Some(bucket) = env_value_any(&[
+            "LABACLAW_WORKER_PLANE_RUSTFS_BUCKET",
+            "LABACLAW_RUSTFS_BUCKET",
+        ]) {
+            self.worker_plane.artifacts.bucket = bucket;
+        }
+        if let Some(prefix) = env_value_any(&[
+            "LABACLAW_WORKER_PLANE_RUSTFS_PREFIX",
+            "LABACLAW_RUSTFS_PREFIX",
+        ]) {
+            self.worker_plane.artifacts.prefix = prefix;
+        }
+        if let Some(region) = env_value_any(&[
+            "LABACLAW_WORKER_PLANE_RUSTFS_REGION",
+            "LABACLAW_RUSTFS_REGION",
+        ]) {
+            self.worker_plane.artifacts.region = region;
+        }
+        if let Some(flag) = env_value_any(&[
+            "LABACLAW_WORKER_PLANE_RUSTFS_FORCE_PATH_STYLE",
+            "LABACLAW_RUSTFS_FORCE_PATH_STYLE",
+        ]) {
+            match flag.trim().to_ascii_lowercase().as_str() {
+                "1" | "true" | "yes" | "on" => self.worker_plane.artifacts.force_path_style = true,
+                "0" | "false" | "no" | "off" => {
+                    self.worker_plane.artifacts.force_path_style = false
+                }
+                _ => tracing::warn!(
+                    value = %flag,
+                    "Ignoring invalid LABACLAW_WORKER_PLANE_RUSTFS_FORCE_PATH_STYLE override"
+                ),
+            }
+        }
+        if let Some(access_key) = env_value_any(&[
+            "LABACLAW_WORKER_PLANE_RUSTFS_ACCESS_KEY",
+            "LABACLAW_RUSTFS_ACCESS_KEY",
+        ]) {
+            self.worker_plane.artifacts.access_key = Some(access_key);
+        }
+        if let Some(secret_key) = env_value_any(&[
+            "LABACLAW_WORKER_PLANE_RUSTFS_SECRET_KEY",
+            "LABACLAW_RUSTFS_SECRET_KEY",
+        ]) {
+            self.worker_plane.artifacts.secret_key = Some(secret_key);
+        }
+        if let Some(namespace) = env_value_any(&["LABACLAW_WORKER_PLANE_NAMESPACE"]) {
+            self.worker_plane.kubernetes.namespace = namespace;
+        }
+        if let Some(service_account) = env_value_any(&["LABACLAW_WORKER_PLANE_SERVICE_ACCOUNT"]) {
+            self.worker_plane.kubernetes.service_account = service_account;
+        }
         // Proxy enabled flag: LABACLAW_PROXY_ENABLED
         let explicit_proxy_enabled = std::env::var("LABACLAW_PROXY_ENABLED")
             .ok()
@@ -9854,6 +10276,16 @@ impl Config {
             &mut config_to_save.browser.computer_use.api_key,
             "config.browser.computer_use.api_key",
         )?;
+        encrypt_optional_secret(
+            &store,
+            &mut config_to_save.worker_plane.artifacts.access_key,
+            "config.worker_plane.artifacts.access_key",
+        )?;
+        encrypt_optional_secret(
+            &store,
+            &mut config_to_save.worker_plane.artifacts.secret_key,
+            "config.worker_plane.artifacts.secret_key",
+        )?;
 
         encrypt_optional_secret(
             &store,
@@ -9899,6 +10331,14 @@ impl Config {
 
         for agent in config_to_save.agents.values_mut() {
             encrypt_optional_secret(&store, &mut agent.api_key, "config.agents.*.api_key")?;
+        }
+        for (index, route) in config_to_save.model_routes.iter_mut().enumerate() {
+            let secret_path = format!("config.model_routes.{index}.api_key");
+            encrypt_optional_secret(&store, &mut route.api_key, &secret_path)?;
+        }
+        for (index, route) in config_to_save.embedding_routes.iter_mut().enumerate() {
+            let secret_path = format!("config.embedding_routes.{index}.api_key");
+            encrypt_optional_secret(&store, &mut route.api_key, &secret_path)?;
         }
 
         encrypt_channel_secrets(&store, &mut config_to_save.channels_config)?;
@@ -10483,6 +10923,63 @@ action = "require_approval"
     }
 
     #[test]
+    async fn worker_plane_enabled_requires_valid_distributed_config() {
+        let mut cfg = Config::default();
+        cfg.worker_plane.enabled = true;
+        cfg.worker_plane.mode = "broken-mode".into();
+
+        let err = cfg.validate().unwrap_err();
+        assert!(err.to_string().contains("worker_plane.mode must be one of"));
+
+        cfg.worker_plane.mode = "redpanda_k8s".into();
+        cfg.worker_plane.redpanda.brokers = vec!["   ".into()];
+        cfg.worker_plane.redpanda.command_topic.clear();
+        cfg.worker_plane.kubernetes.service_account.clear();
+
+        let err = cfg.validate().unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains("worker_plane.redpanda.brokers")
+                || message.contains("worker_plane.redpanda.command_topic")
+                || message.contains("worker_plane.kubernetes.service_account")
+        );
+
+        cfg.worker_plane.redpanda.brokers = vec!["10.50.0.11:31092".into()];
+        cfg.worker_plane.redpanda.command_topic = "agent.command.v1".into();
+        cfg.worker_plane.kubernetes.service_account = "labaclaw-worker-plane".into();
+        cfg.validate()
+            .expect("valid worker-plane config should pass");
+    }
+
+    #[test]
+    async fn worker_plane_validation_rejects_noncanonical_whitespace() {
+        let mut cfg = Config::default();
+        cfg.worker_plane.enabled = true;
+        cfg.worker_plane.mode = " redpanda_k8s ".into();
+
+        let err = cfg.validate().unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("worker_plane.mode must not include leading or trailing whitespace"));
+
+        cfg.worker_plane.mode = "redpanda_k8s".into();
+        cfg.worker_plane.redpanda.brokers = vec!["10.50.0.11:31092 ".into()];
+        cfg.worker_plane.redpanda.command_topic = "agent.command.v1".into();
+        cfg.worker_plane.redpanda.event_topic = "agent.event.v1".into();
+        cfg.worker_plane.redpanda.heartbeat_topic = "agent.heartbeat.v1".into();
+        cfg.worker_plane.redpanda.projection_consumer_group = "claw-projections".into();
+        cfg.worker_plane.artifacts.bucket = "labaclaw-artifacts".into();
+        cfg.worker_plane.artifacts.region = "us-east-1".into();
+        cfg.worker_plane.kubernetes.namespace = "labaclaw-workers".into();
+        cfg.worker_plane.kubernetes.service_account = "labaclaw-worker-plane".into();
+
+        let err = cfg.validate().unwrap_err();
+        assert!(err.to_string().contains(
+            "worker_plane.redpanda.brokers[0] must not include leading or trailing whitespace"
+        ));
+    }
+
+    #[test]
     async fn runtime_config_default() {
         let r = RuntimeConfig::default();
         assert_eq!(r.kind, "native");
@@ -10697,6 +11194,7 @@ ws_url = "ws://127.0.0.1:3002"
                 kind: "docker".into(),
                 ..RuntimeConfig::default()
             },
+            worker_plane: WorkerPlaneConfig::default(),
             research: ResearchPhaseConfig::default(),
             reliability: ReliabilityConfig::default(),
             scheduler: SchedulerConfig::default(),
@@ -11134,6 +11632,7 @@ denied_tools = ["shell"]
             autonomy: AutonomyConfig::default(),
             security: SecurityConfig::default(),
             runtime: RuntimeConfig::default(),
+            worker_plane: WorkerPlaneConfig::default(),
             research: ResearchPhaseConfig::default(),
             reliability: ReliabilityConfig::default(),
             scheduler: SchedulerConfig::default(),
@@ -11211,6 +11710,15 @@ denied_tools = ["shell"]
         config.proxy.https_proxy = Some("https://user:pass@proxy.internal:8443".into());
         config.proxy.all_proxy = Some("socks5://user:pass@proxy.internal:1080".into());
         config.browser.computer_use.api_key = Some("browser-credential".into());
+        config.worker_plane.artifacts.access_key = Some("rustfs-access-key".into());
+        config.worker_plane.artifacts.secret_key = Some("rustfs-secret-key".into());
+        config.embedding_routes.push(EmbeddingRouteConfig {
+            hint: "semantic".into(),
+            provider: "openai".into(),
+            model: "text-embedding-3-small".into(),
+            dimensions: Some(1536),
+            api_key: Some("embedding-route-credential".into()),
+        });
         config.web_search.brave_api_key = Some("brave-credential".into());
         config.web_search.perplexity_api_key = Some("perplexity-credential".into());
         config.web_search.exa_api_key = Some("exa-credential".into());
@@ -11315,6 +11823,32 @@ denied_tools = ["shell"]
         assert_eq!(
             store.decrypt(browser_encrypted).unwrap(),
             "browser-credential"
+        );
+
+        let worker_plane_access_key = stored.worker_plane.artifacts.access_key.as_deref().unwrap();
+        assert!(crate::security::SecretStore::is_encrypted(
+            worker_plane_access_key
+        ));
+        assert_eq!(
+            store.decrypt(worker_plane_access_key).unwrap(),
+            "rustfs-access-key"
+        );
+        let worker_plane_secret_key = stored.worker_plane.artifacts.secret_key.as_deref().unwrap();
+        assert!(crate::security::SecretStore::is_encrypted(
+            worker_plane_secret_key
+        ));
+        assert_eq!(
+            store.decrypt(worker_plane_secret_key).unwrap(),
+            "rustfs-secret-key"
+        );
+
+        let embedding_route_encrypted = stored.embedding_routes[0].api_key.as_deref().unwrap();
+        assert!(crate::security::SecretStore::is_encrypted(
+            embedding_route_encrypted
+        ));
+        assert_eq!(
+            store.decrypt(embedding_route_encrypted).unwrap(),
+            "embedding-route-credential"
         );
 
         let web_search_encrypted = stored.web_search.brave_api_key.as_deref().unwrap();
@@ -14318,6 +14852,52 @@ default_model = "legacy-model"
         assert_eq!(config.provider.transport.as_deref(), Some("sse"));
 
         std::env::remove_var("LABACLAW_PROVIDER_TRANSPORT");
+    }
+
+    #[test]
+    async fn env_override_worker_plane_config_is_applied() {
+        let _env_guard = env_override_lock().await;
+        let mut config = Config::default();
+
+        std::env::set_var("LABACLAW_WORKER_PLANE_ENABLED", "true");
+        std::env::set_var("LABACLAW_WORKER_PLANE_MODE", "redpanda_k8s");
+        std::env::set_var(
+            "LABACLAW_WORKER_PLANE_REDPANDA_BROKERS",
+            "10.50.0.11:31092,10.50.0.12:31092",
+        );
+        std::env::set_var("LABACLAW_WORKER_PLANE_COMMAND_TOPIC", "agent.command.v1");
+        std::env::set_var("LABACLAW_RUSTFS_ENDPOINT", "http://10.50.0.11:30900");
+        std::env::set_var("LABACLAW_RUSTFS_BUCKET", "laba-artifacts");
+        std::env::set_var("LABACLAW_RUSTFS_PREFIX", "labaclaw");
+        std::env::set_var("LABACLAW_RUSTFS_FORCE_PATH_STYLE", "true");
+        std::env::set_var("LABACLAW_WORKER_PLANE_NAMESPACE", "labaclaw-workers");
+
+        config.apply_env_overrides();
+
+        assert!(config.worker_plane.enabled);
+        assert_eq!(config.worker_plane.mode, "redpanda_k8s");
+        assert_eq!(
+            config.worker_plane.redpanda.brokers,
+            vec!["10.50.0.11:31092", "10.50.0.12:31092"]
+        );
+        assert_eq!(
+            config.worker_plane.artifacts.endpoint.as_deref(),
+            Some("http://10.50.0.11:30900")
+        );
+        assert_eq!(config.worker_plane.artifacts.bucket, "laba-artifacts");
+        assert_eq!(config.worker_plane.artifacts.prefix, "labaclaw");
+        assert!(config.worker_plane.artifacts.force_path_style);
+        assert_eq!(config.worker_plane.kubernetes.namespace, "labaclaw-workers");
+
+        std::env::remove_var("LABACLAW_WORKER_PLANE_ENABLED");
+        std::env::remove_var("LABACLAW_WORKER_PLANE_MODE");
+        std::env::remove_var("LABACLAW_WORKER_PLANE_REDPANDA_BROKERS");
+        std::env::remove_var("LABACLAW_WORKER_PLANE_COMMAND_TOPIC");
+        std::env::remove_var("LABACLAW_RUSTFS_ENDPOINT");
+        std::env::remove_var("LABACLAW_RUSTFS_BUCKET");
+        std::env::remove_var("LABACLAW_RUSTFS_PREFIX");
+        std::env::remove_var("LABACLAW_RUSTFS_FORCE_PATH_STYLE");
+        std::env::remove_var("LABACLAW_WORKER_PLANE_NAMESPACE");
     }
 
     #[test]

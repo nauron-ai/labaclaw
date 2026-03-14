@@ -1072,6 +1072,20 @@ fn resolve_provider_credential(name: &str, credential_override: Option<&str>) ->
     None
 }
 
+/// Resolve a provider credential into a concrete value for internal runtime use.
+///
+/// This is intended for internal subsystems that need to materialize child
+/// configurations from the orchestrator's credential inventory.
+pub(crate) fn resolve_provider_credential_for_runtime(
+    name: &str,
+    credential_override: Option<&str>,
+) -> Option<String> {
+    if is_qwen_oauth_alias(name) {
+        return resolve_qwen_oauth_context(credential_override).credential;
+    }
+    resolve_provider_credential(name, credential_override)
+}
+
 /// Check whether a provider credential can be resolved from override/env fallbacks.
 ///
 /// This mirrors provider credential resolution while avoiding exposing the
@@ -2562,6 +2576,24 @@ mod tests {
         let context = resolve_qwen_oauth_context(Some(QWEN_OAUTH_PLACEHOLDER));
 
         assert!(context.credential.is_none());
+    }
+
+    #[test]
+    fn resolve_provider_credential_for_runtime_uses_qwen_oauth_resolution() {
+        let _env_lock = env_lock();
+        let fake_home = format!(
+            "/tmp/zeroclaw-qwen-oauth-home-{}-runtime",
+            std::process::id()
+        );
+        let _home_guard = EnvGuard::set("HOME", Some(fake_home.as_str()));
+        let _token_guard = EnvGuard::set(QWEN_OAUTH_TOKEN_ENV, Some("oauth-runtime-token"));
+        let _refresh_guard = EnvGuard::set(QWEN_OAUTH_REFRESH_TOKEN_ENV, None);
+        let _resource_guard = EnvGuard::set(QWEN_OAUTH_RESOURCE_URL_ENV, None);
+
+        let credential =
+            resolve_provider_credential_for_runtime("qwen-code", Some(QWEN_OAUTH_PLACEHOLDER));
+
+        assert_eq!(credential.as_deref(), Some("oauth-runtime-token"));
     }
 
     #[test]

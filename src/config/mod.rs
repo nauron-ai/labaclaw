@@ -28,7 +28,9 @@ pub use schema::{
     StorageProviderConfig, StorageProviderSection, StreamMode, SubAgentsConfig,
     SyscallAnomalyConfig, TelegramConfig, TranscriptionConfig, TunnelConfig, UrlAccessConfig,
     WasmCapabilityEscalationMode, WasmConfig, WasmModuleHashPolicy, WasmRuntimeConfig,
-    WasmSecurityConfig, WebFetchConfig, WebSearchConfig, WebhookConfig, DEFAULT_MODEL_FALLBACK,
+    WasmSecurityConfig, WebFetchConfig, WebSearchConfig, WebhookConfig, WorkerPlaneArtifactsConfig,
+    WorkerPlaneConfig, WorkerPlaneKubernetesConfig, WorkerPlaneRedpandaConfig,
+    DEFAULT_MODEL_FALLBACK,
 };
 
 pub fn name_and_presence<T: traits::ChannelConfig>(channel: Option<&T>) -> (&'static str, bool) {
@@ -46,6 +48,17 @@ mod tests {
         assert!(config.default_provider.is_some());
         assert!(config.default_model.is_some());
         assert!(config.default_temperature > 0.0);
+    }
+
+    #[test]
+    fn reexported_worker_plane_configs_are_constructible() {
+        let worker_plane = WorkerPlaneConfig::default();
+        let redpanda = WorkerPlaneRedpandaConfig::default();
+        let artifacts = WorkerPlaneArtifactsConfig::default();
+        let kubernetes = WorkerPlaneKubernetesConfig::default();
+
+        assert!(!worker_plane.enabled);
+        let _ = (redpanda, artifacts, kubernetes);
     }
 
     #[test]
