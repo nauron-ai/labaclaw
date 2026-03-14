@@ -79,6 +79,7 @@ jobs:
                   set -euo pipefail
                   ./scripts/ci/rust_quality_gate.sh
                   cargo test --locked --lib --bins --verbose
+                  cargo test --locked --lib --bins --verbose --features "${RELEASE_FEATURES}"
 
             - name: Build production binary (canonical)
               shell: bash

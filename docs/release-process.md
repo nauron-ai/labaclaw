@@ -16,7 +16,7 @@ This runbook defines the binary-only release flow for this fork.
   - Verify mode (manual/schedule) and publish mode (tag push or manual publish).
 
 Production release assets are expected to include `worker-plane-distributed`, because
-the host `claw` binary is the component that publishes spawn/task commands to
+the host `labaclaw` binary is the component that publishes spawn/task commands to
 Redpanda and uploads agent artifacts to RustFS.
 
 Publish-mode guardrails:
