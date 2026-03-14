@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::signal;
@@ -109,7 +110,7 @@ pub async fn write_task_request(
 }
 
 pub async fn read_runtime_state(path: &Path) -> Result<Option<SpawnedAgentRuntimeState>> {
-    if !path.exists() {
+    if !path_exists(path).await? {
         return Ok(None);
     }
     let bytes = fs::read(path).await?;
@@ -176,13 +177,13 @@ pub async fn run(config: Config, poll_interval_ms: u64) -> Result<()> {
 
 async fn take_request(agent_home: &Path) -> Result<Option<(SpawnedAgentTaskRequest, PathBuf)>> {
     let active = bootstrap_active_request_path(agent_home);
-    if active.exists() {
+    if path_exists(&active).await? {
         let request = read_task_request(&active).await?;
         return Ok(Some((request, active)));
     }
 
     let pending = bootstrap_request_path(agent_home);
-    if !pending.exists() {
+    if !path_exists(&pending).await? {
         return Ok(None);
     }
 
@@ -305,7 +306,7 @@ async fn process_request(
 
 async fn finalize_request(agent_home: &Path, active_path: &Path) -> Result<()> {
     let done_path = bootstrap_done_request_path(agent_home);
-    if done_path.exists() {
+    if path_exists(&done_path).await? {
         let _ = fs::remove_file(&done_path).await;
     }
     fs::rename(active_path, done_path)
@@ -351,6 +352,16 @@ async fn write_json_atomically(path: &Path, bytes: Vec<u8>) -> Result<()> {
     anyhow::bail!("Atomic write path must have a parent directory")
 }
 
+async fn path_exists(path: &Path) -> Result<bool> {
+    match fs::metadata(path).await {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
+        Err(error) => {
+            Err(error).with_context(|| format!("Failed to inspect path {}", path.display()))
+        }
+    }
+}
+
 async fn shutdown_signal() {
     #[cfg(unix)]
     {
@@ -382,9 +393,10 @@ async fn write_event(
     let events_dir = agent_home.join("events");
     fs::create_dir_all(&events_dir).await?;
     let file_name = format!(
-        "{}-{}.v1.json",
+        "{}-{}-{}.v1.json",
         Utc::now().format("%Y%m%dT%H%M%S%.3fZ"),
-        event_name
+        event_name,
+        Uuid::new_v4()
     );
     fs::write(
         events_dir.join(file_name),
@@ -397,6 +409,7 @@ async fn write_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn control_paths_live_under_agent_home() {
@@ -410,5 +423,44 @@ mod tests {
             bootstrap_result_path(&home),
             home.join("workspace/BOOTSTRAP_RESULT.md")
         );
+    }
+
+    #[tokio::test]
+    async fn read_runtime_state_returns_none_for_missing_file() {
+        let temp = tempdir().expect("temp dir");
+        let missing = temp.path().join("runtime_state.json");
+
+        let state = read_runtime_state(&missing).await.expect("must read");
+        assert!(state.is_none());
+    }
+
+    #[tokio::test]
+    async fn write_event_uses_unique_file_names() {
+        let temp = tempdir().expect("temp dir");
+
+        write_event(
+            temp.path(),
+            "AgentProgressReported",
+            json!({"event_id": "one"}),
+        )
+        .await
+        .expect("first event");
+        write_event(
+            temp.path(),
+            "AgentProgressReported",
+            json!({"event_id": "two"}),
+        )
+        .await
+        .expect("second event");
+
+        let events_dir = temp.path().join("events");
+        let mut entries = fs::read_dir(&events_dir).await.expect("read events dir");
+        let mut names = Vec::new();
+        while let Some(entry) = entries.next_entry().await.expect("next entry") {
+            names.push(entry.file_name().to_string_lossy().into_owned());
+        }
+
+        assert_eq!(names.len(), 2);
+        assert_ne!(names[0], names[1]);
     }
 }

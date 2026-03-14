@@ -10128,7 +10128,10 @@ impl Config {
         ]) {
             self.worker_plane.artifacts.region = region;
         }
-        if let Some(flag) = env_value_any(&["LABACLAW_WORKER_PLANE_RUSTFS_FORCE_PATH_STYLE"]) {
+        if let Some(flag) = env_value_any(&[
+            "LABACLAW_WORKER_PLANE_RUSTFS_FORCE_PATH_STYLE",
+            "LABACLAW_RUSTFS_FORCE_PATH_STYLE",
+        ]) {
             match flag.trim().to_ascii_lowercase().as_str() {
                 "1" | "true" | "yes" | "on" => self.worker_plane.artifacts.force_path_style = true,
                 "0" | "false" | "no" | "off" => {
@@ -14866,6 +14869,7 @@ default_model = "legacy-model"
         std::env::set_var("LABACLAW_RUSTFS_ENDPOINT", "http://10.50.0.11:30900");
         std::env::set_var("LABACLAW_RUSTFS_BUCKET", "laba-artifacts");
         std::env::set_var("LABACLAW_RUSTFS_PREFIX", "labaclaw");
+        std::env::set_var("LABACLAW_RUSTFS_FORCE_PATH_STYLE", "true");
         std::env::set_var("LABACLAW_WORKER_PLANE_NAMESPACE", "labaclaw-workers");
 
         config.apply_env_overrides();
@@ -14882,6 +14886,7 @@ default_model = "legacy-model"
         );
         assert_eq!(config.worker_plane.artifacts.bucket, "laba-artifacts");
         assert_eq!(config.worker_plane.artifacts.prefix, "labaclaw");
+        assert!(config.worker_plane.artifacts.force_path_style);
         assert_eq!(config.worker_plane.kubernetes.namespace, "labaclaw-workers");
 
         std::env::remove_var("LABACLAW_WORKER_PLANE_ENABLED");
@@ -14891,6 +14896,7 @@ default_model = "legacy-model"
         std::env::remove_var("LABACLAW_RUSTFS_ENDPOINT");
         std::env::remove_var("LABACLAW_RUSTFS_BUCKET");
         std::env::remove_var("LABACLAW_RUSTFS_PREFIX");
+        std::env::remove_var("LABACLAW_RUSTFS_FORCE_PATH_STYLE");
         std::env::remove_var("LABACLAW_WORKER_PLANE_NAMESPACE");
     }
 

@@ -40,6 +40,40 @@ impl DockerAgentSpawner {
         Self { config }
     }
 
+    fn parse_inspect_output(
+        &self,
+        container_name: &str,
+        raw_output: &str,
+    ) -> Result<DockerAgentServiceStatus> {
+        let trimmed = raw_output.trim();
+        let mut parts = trimmed.splitn(2, '|');
+        let container_id = parts
+            .next()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .with_context(|| {
+                format!(
+                    "Malformed docker inspect output for '{}': missing container id in {:?}",
+                    container_name, raw_output
+                )
+            })?;
+        let state = parts
+            .next()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .with_context(|| {
+                format!(
+                    "Malformed docker inspect output for '{}': missing container state in {:?}",
+                    container_name, raw_output
+                )
+            })?;
+
+        Ok(DockerAgentServiceStatus {
+            container_id: container_id.to_string(),
+            state: state.to_string(),
+        })
+    }
+
     fn validate_host_path(&self, path: &Path) -> Result<PathBuf> {
         let resolved = path.canonicalize().with_context(|| {
             format!(
@@ -258,19 +292,16 @@ impl DockerAgentSpawner {
         }
 
         let raw = String::from_utf8_lossy(&output.stdout);
-        let trimmed = raw.trim();
-        let mut parts = trimmed.splitn(2, '|');
-        let Some(container_id) = parts.next() else {
-            return Ok(None);
-        };
-        let Some(state) = parts.next() else {
-            return Ok(None);
-        };
+        let parsed = self
+            .parse_inspect_output(container_name, raw.as_ref())
+            .with_context(|| {
+                format!(
+                    "Docker inspect for '{}' exited successfully but returned malformed output (status: {})",
+                    container_name, output.status
+                )
+            })?;
 
-        Ok(Some(DockerAgentServiceStatus {
-            container_id: container_id.trim().to_string(),
-            state: state.trim().to_string(),
-        }))
+        Ok(Some(parsed))
     }
 
     pub async fn stop_service(&self, container_name: &str) -> Result<()> {
@@ -450,5 +481,27 @@ mod tests {
         assert!(debug.contains("\"/agent\""));
         assert!(!debug.contains(" /agent "));
         assert!(!debug.contains(" /mounted-workspaces/0 "));
+    }
+
+    #[test]
+    fn parse_inspect_output_rejects_empty_payload() {
+        let spawner = test_spawner();
+        let error = spawner
+            .parse_inspect_output("agent-empty", "")
+            .expect_err("empty output must fail");
+
+        assert!(error
+            .to_string()
+            .contains("Malformed docker inspect output for 'agent-empty'"));
+    }
+
+    #[test]
+    fn parse_inspect_output_rejects_missing_state() {
+        let spawner = test_spawner();
+        let error = spawner
+            .parse_inspect_output("agent-missing-state", "container-id|")
+            .expect_err("missing state must fail");
+
+        assert!(error.to_string().contains("missing container state"));
     }
 }
