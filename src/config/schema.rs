@@ -4176,7 +4176,7 @@ fn default_worker_plane_mode() -> String {
 }
 
 fn is_valid_worker_plane_mode(mode: &str) -> bool {
-    matches!(mode.trim(), "local_docker" | "redpanda_k8s")
+    matches!(mode, "local_docker" | "redpanda_k8s")
 }
 
 fn validate_worker_plane_config(config: &WorkerPlaneConfig) -> Result<()> {
@@ -4184,7 +4184,11 @@ fn validate_worker_plane_config(config: &WorkerPlaneConfig) -> Result<()> {
         return Ok(());
     }
 
-    let mode = config.mode.trim();
+    let mode_raw = config.mode.as_str();
+    let mode = mode_raw.trim();
+    if mode_raw != mode {
+        anyhow::bail!("worker_plane.mode must not include leading or trailing whitespace");
+    }
     if !is_valid_worker_plane_mode(mode) {
         anyhow::bail!(
             "worker_plane.mode must be one of: local_docker, redpanda_k8s (got '{mode}')"
@@ -4192,53 +4196,67 @@ fn validate_worker_plane_config(config: &WorkerPlaneConfig) -> Result<()> {
     }
 
     if mode == "redpanda_k8s" {
-        if config
-            .redpanda
-            .brokers
-            .iter()
-            .all(|broker| broker.trim().is_empty())
-        {
+        if config.redpanda.brokers.is_empty() {
             anyhow::bail!(
                 "worker_plane.redpanda.brokers must contain at least one broker when worker_plane.mode='redpanda_k8s'"
             );
         }
-        for (field_name, value) in [
+        for (index, raw_broker) in config.redpanda.brokers.iter().enumerate() {
+            let broker = raw_broker.trim();
+            if broker.is_empty() {
+                anyhow::bail!(
+                    "worker_plane.redpanda.brokers[{index}] must not be empty when worker_plane.mode='redpanda_k8s'"
+                );
+            }
+            if raw_broker != broker {
+                anyhow::bail!(
+                    "worker_plane.redpanda.brokers[{index}] must not include leading or trailing whitespace when worker_plane.mode='redpanda_k8s'"
+                );
+            }
+        }
+        for (field_name, raw_value) in [
             (
                 "worker_plane.redpanda.command_topic",
-                config.redpanda.command_topic.trim(),
+                config.redpanda.command_topic.as_str(),
             ),
             (
                 "worker_plane.redpanda.event_topic",
-                config.redpanda.event_topic.trim(),
+                config.redpanda.event_topic.as_str(),
             ),
             (
                 "worker_plane.redpanda.heartbeat_topic",
-                config.redpanda.heartbeat_topic.trim(),
+                config.redpanda.heartbeat_topic.as_str(),
             ),
             (
                 "worker_plane.redpanda.projection_consumer_group",
-                config.redpanda.projection_consumer_group.trim(),
+                config.redpanda.projection_consumer_group.as_str(),
             ),
             (
                 "worker_plane.artifacts.bucket",
-                config.artifacts.bucket.trim(),
+                config.artifacts.bucket.as_str(),
             ),
             (
                 "worker_plane.artifacts.region",
-                config.artifacts.region.trim(),
+                config.artifacts.region.as_str(),
             ),
             (
                 "worker_plane.kubernetes.namespace",
-                config.kubernetes.namespace.trim(),
+                config.kubernetes.namespace.as_str(),
             ),
             (
                 "worker_plane.kubernetes.service_account",
-                config.kubernetes.service_account.trim(),
+                config.kubernetes.service_account.as_str(),
             ),
         ] {
+            let value = raw_value.trim();
             if value.is_empty() {
                 anyhow::bail!(
                     "{field_name} must not be empty when worker_plane.mode='redpanda_k8s'"
+                );
+            }
+            if raw_value != value {
+                anyhow::bail!(
+                    "{field_name} must not include leading or trailing whitespace when worker_plane.mode='redpanda_k8s'"
                 );
             }
         }
@@ -4268,7 +4286,7 @@ fn default_worker_plane_artifact_region() -> String {
 }
 
 fn default_worker_plane_artifact_bucket() -> String {
-    "laba-artifacts".into()
+    "labaclaw-artifacts".into()
 }
 
 fn default_worker_plane_artifact_prefix() -> String {
@@ -8220,6 +8238,10 @@ impl Config {
                 let secret_path = format!("config.model_routes.{index}.api_key");
                 decrypt_optional_secret(&store, &mut route.api_key, &secret_path)?;
             }
+            for (index, route) in config.embedding_routes.iter_mut().enumerate() {
+                let secret_path = format!("config.embedding_routes.{index}.api_key");
+                decrypt_optional_secret(&store, &mut route.api_key, &secret_path)?;
+            }
             decrypt_optional_secret(
                 &store,
                 &mut config.transcription.api_key,
@@ -10311,6 +10333,10 @@ impl Config {
             let secret_path = format!("config.model_routes.{index}.api_key");
             encrypt_optional_secret(&store, &mut route.api_key, &secret_path)?;
         }
+        for (index, route) in config_to_save.embedding_routes.iter_mut().enumerate() {
+            let secret_path = format!("config.embedding_routes.{index}.api_key");
+            encrypt_optional_secret(&store, &mut route.api_key, &secret_path)?;
+        }
 
         encrypt_channel_secrets(&store, &mut config_to_save.channels_config)?;
 
@@ -10920,6 +10946,34 @@ action = "require_approval"
         cfg.worker_plane.kubernetes.service_account = "labaclaw-worker-plane".into();
         cfg.validate()
             .expect("valid worker-plane config should pass");
+    }
+
+    #[test]
+    async fn worker_plane_validation_rejects_noncanonical_whitespace() {
+        let mut cfg = Config::default();
+        cfg.worker_plane.enabled = true;
+        cfg.worker_plane.mode = " redpanda_k8s ".into();
+
+        let err = cfg.validate().unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("worker_plane.mode must not include leading or trailing whitespace"));
+
+        cfg.worker_plane.mode = "redpanda_k8s".into();
+        cfg.worker_plane.redpanda.brokers = vec!["10.50.0.11:31092 ".into()];
+        cfg.worker_plane.redpanda.command_topic = "agent.command.v1".into();
+        cfg.worker_plane.redpanda.event_topic = "agent.event.v1".into();
+        cfg.worker_plane.redpanda.heartbeat_topic = "agent.heartbeat.v1".into();
+        cfg.worker_plane.redpanda.projection_consumer_group = "claw-projections".into();
+        cfg.worker_plane.artifacts.bucket = "labaclaw-artifacts".into();
+        cfg.worker_plane.artifacts.region = "us-east-1".into();
+        cfg.worker_plane.kubernetes.namespace = "labaclaw-workers".into();
+        cfg.worker_plane.kubernetes.service_account = "labaclaw-worker-plane".into();
+
+        let err = cfg.validate().unwrap_err();
+        assert!(err.to_string().contains(
+            "worker_plane.redpanda.brokers[0] must not include leading or trailing whitespace"
+        ));
     }
 
     #[test]
@@ -11655,6 +11709,13 @@ denied_tools = ["shell"]
         config.browser.computer_use.api_key = Some("browser-credential".into());
         config.worker_plane.artifacts.access_key = Some("rustfs-access-key".into());
         config.worker_plane.artifacts.secret_key = Some("rustfs-secret-key".into());
+        config.embedding_routes.push(EmbeddingRouteConfig {
+            hint: "semantic".into(),
+            provider: "openai".into(),
+            model: "text-embedding-3-small".into(),
+            dimensions: Some(1536),
+            api_key: Some("embedding-route-credential".into()),
+        });
         config.web_search.brave_api_key = Some("brave-credential".into());
         config.web_search.perplexity_api_key = Some("perplexity-credential".into());
         config.web_search.exa_api_key = Some("exa-credential".into());
@@ -11776,6 +11837,15 @@ denied_tools = ["shell"]
         assert_eq!(
             store.decrypt(worker_plane_secret_key).unwrap(),
             "rustfs-secret-key"
+        );
+
+        let embedding_route_encrypted = stored.embedding_routes[0].api_key.as_deref().unwrap();
+        assert!(crate::security::SecretStore::is_encrypted(
+            embedding_route_encrypted
+        ));
+        assert_eq!(
+            store.decrypt(embedding_route_encrypted).unwrap(),
+            "embedding-route-credential"
         );
 
         let web_search_encrypted = stored.web_search.brave_api_key.as_deref().unwrap();

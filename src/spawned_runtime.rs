@@ -100,7 +100,7 @@ pub async fn write_task_request(
     let dir = runtime_dir(agent_home);
     fs::create_dir_all(&dir).await?;
     let path = bootstrap_request_path(agent_home);
-    fs::write(
+    write_json_atomically(
         &path,
         serde_json::to_vec_pretty(request).context("Failed to serialize task request")?,
     )
@@ -135,15 +135,16 @@ pub async fn run(config: Config, poll_interval_ms: u64) -> Result<()> {
     let poll = Duration::from_millis(poll_interval_ms.max(250));
 
     loop {
-        if shutdown_requested().await {
-            tracing::info!("Shutdown signal received, exiting spawned agent runtime");
-            state.lifecycle_status = "terminated".into();
-            refresh_heartbeat(&mut state);
-            persist_state(&state_path, &state).await?;
-            return Ok(());
-        }
+        let next_request = tokio::select! {
+            () = shutdown_signal() => {
+                tracing::info!("Shutdown signal received, exiting spawned agent runtime");
+                mark_terminated(&state_path, &mut state).await?;
+                return Ok(());
+            }
+            request = take_request(&agent_home) => request?,
+        };
 
-        if let Some((request, active_path)) = take_request(&agent_home).await? {
+        if let Some((request, active_path)) = next_request {
             process_request(
                 &config,
                 &agent_home,
@@ -314,7 +315,7 @@ async fn finalize_request(agent_home: &Path, active_path: &Path) -> Result<()> {
 }
 
 async fn persist_state(path: &Path, state: &SpawnedAgentRuntimeState) -> Result<()> {
-    fs::write(
+    write_json_atomically(
         path,
         serde_json::to_vec_pretty(state).context("Failed to serialize runtime state")?,
     )
@@ -328,11 +329,26 @@ fn refresh_heartbeat(state: &mut SpawnedAgentRuntimeState) {
     state.last_heartbeat_at = now;
 }
 
-async fn shutdown_requested() -> bool {
-    tokio::select! {
-        () = shutdown_signal() => true,
-        else => false,
+async fn mark_terminated(path: &Path, state: &mut SpawnedAgentRuntimeState) -> Result<()> {
+    state.lifecycle_status = "terminated".into();
+    refresh_heartbeat(state);
+    persist_state(path, state).await
+}
+
+async fn write_json_atomically(path: &Path, bytes: Vec<u8>) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).await?;
+        let file_name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("state.json");
+        let temp_path = parent.join(format!(".{file_name}.tmp-{}", Uuid::new_v4()));
+        fs::write(&temp_path, bytes).await?;
+        fs::rename(&temp_path, path).await?;
+        return Ok(());
     }
+
+    anyhow::bail!("Atomic write path must have a parent directory")
 }
 
 async fn shutdown_signal() {

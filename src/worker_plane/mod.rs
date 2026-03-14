@@ -460,15 +460,15 @@ mod tests {
 
         assert_eq!(
             refs.spec_ref,
-            "s3://laba-artifacts/labaclaw/specs/agent-1/v20260313/agent-spec.json"
+            "s3://labaclaw-artifacts/labaclaw/specs/agent-1/v20260313/agent-spec.json"
         );
         assert_eq!(
             refs.bootstrap_ref,
-            "s3://laba-artifacts/labaclaw/bootstrap/agent-1/req-1/request.json"
+            "s3://labaclaw-artifacts/labaclaw/bootstrap/agent-1/req-1/request.json"
         );
         assert_eq!(
             refs.result_ref,
-            "s3://laba-artifacts/labaclaw/results/agent-1/req-1/result.md"
+            "s3://labaclaw-artifacts/labaclaw/results/agent-1/req-1/result.md"
         );
     }
 
@@ -495,9 +495,9 @@ mod tests {
     #[test]
     fn parse_s3_uri_splits_bucket_and_key() {
         let (bucket, key) =
-            parse_s3_uri("s3://laba-artifacts/labaclaw/results/agent-1/req-1/result.md")
+            parse_s3_uri("s3://labaclaw-artifacts/labaclaw/results/agent-1/req-1/result.md")
                 .expect("s3 ref should parse");
-        assert_eq!(bucket, "laba-artifacts");
+        assert_eq!(bucket, "labaclaw-artifacts");
         assert_eq!(key, "labaclaw/results/agent-1/req-1/result.md");
     }
 

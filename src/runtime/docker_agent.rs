@@ -1,7 +1,7 @@
 use crate::config::DockerRuntimeConfig;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use tokio::process::Command;
 
 const DEFAULT_CONTAINER_CONFIG_DIR: &str = "/agent";
@@ -59,6 +59,56 @@ impl DockerAgentSpawner {
         Ok(resolved)
     }
 
+    fn normalize_container_path(&self, raw_path: &str, field_name: &str) -> Result<String> {
+        let normalized = raw_path.trim();
+        if normalized.is_empty() {
+            anyhow::bail!("{field_name} must not be empty");
+        }
+
+        let path = Path::new(normalized);
+        if !path.is_absolute() {
+            anyhow::bail!("{field_name} must be an absolute container path");
+        }
+        if path == Path::new("/") {
+            anyhow::bail!("{field_name} must not be filesystem root (/)");
+        }
+        if path
+            .components()
+            .any(|component| matches!(component, Component::ParentDir | Component::CurDir))
+        {
+            anyhow::bail!("{field_name} must not contain '.' or '..' segments");
+        }
+
+        Ok(normalized.to_string())
+    }
+
+    fn validate_workspace_mount_path(&self, path: &Path) -> Result<PathBuf> {
+        if !self.config.mount_workspace {
+            anyhow::bail!("Workspace mounts are disabled in runtime.docker.mount_workspace");
+        }
+
+        let resolved = self.validate_host_path(path)?;
+        if self.config.allowed_workspace_roots.is_empty() {
+            return Ok(resolved);
+        }
+
+        let allowed = self.config.allowed_workspace_roots.iter().any(|root| {
+            let root_path = Path::new(root)
+                .canonicalize()
+                .unwrap_or_else(|_| PathBuf::from(root));
+            resolved.starts_with(root_path)
+        });
+
+        if !allowed {
+            anyhow::bail!(
+                "Workspace path {} is not in runtime.docker.allowed_workspace_roots",
+                resolved.display()
+            );
+        }
+
+        Ok(resolved)
+    }
+
     pub fn default_container_config_dir() -> &'static str {
         DEFAULT_CONTAINER_CONFIG_DIR
     }
@@ -104,32 +154,41 @@ impl DockerAgentSpawner {
                     request.host_config_dir.display()
                 )
             })?;
+        let container_config_dir = self.normalize_container_path(
+            &request.container_config_dir,
+            "spawned agent container_config_dir",
+        )?;
         process.arg("--volume").arg(format!(
             "{}:{}:rw",
             host_config_dir.display(),
-            request.container_config_dir
+            container_config_dir
         ));
 
         for mount in &request.workspace_mounts {
-            let host_path = self.validate_host_path(&mount.host_path).with_context(|| {
-                format!(
-                    "Failed to validate workspace mount {}",
-                    mount.host_path.display()
-                )
-            })?;
+            let host_path = self
+                .validate_workspace_mount_path(&mount.host_path)
+                .with_context(|| {
+                    format!(
+                        "Failed to validate workspace mount {}",
+                        mount.host_path.display()
+                    )
+                })?;
+            let container_path = self.normalize_container_path(
+                &mount.container_path,
+                "spawned agent workspace container_path",
+            )?;
             let mode = if mount.read_only { "ro" } else { "rw" };
             process.arg("--volume").arg(format!(
                 "{}:{}:{}",
                 host_path.display(),
-                mount.container_path,
+                container_path,
                 mode
             ));
         }
 
-        process.arg("--env").arg(format!(
-            "LABACLAW_CONFIG_DIR={}",
-            request.container_config_dir.trim()
-        ));
+        process
+            .arg("--env")
+            .arg(format!("LABACLAW_CONFIG_DIR={}", container_config_dir));
 
         for (key, value) in &request.env {
             process.arg("--env").arg(format!("{key}={value}"));
@@ -142,7 +201,7 @@ impl DockerAgentSpawner {
         process
             .arg(image)
             .arg("--config-dir")
-            .arg(request.container_config_dir.trim())
+            .arg(&container_config_dir)
             .arg("agent-runtime")
             .arg("--poll-interval-ms")
             .arg("1000");
@@ -334,8 +393,62 @@ mod tests {
         let error = spawner
             .build_spawn_command(&request)
             .expect_err("must reject");
-        assert!(error
-            .to_string()
-            .contains("Host path ./does-not-exist does not exist or is inaccessible"));
+        let message = error.to_string();
+        assert!(message.contains("Failed to validate spawned agent config dir"));
+        assert!(message.contains("does-not-exist"));
+    }
+
+    #[test]
+    fn spawn_builder_rejects_workspace_mounts_when_disabled() {
+        let spawner = DockerAgentSpawner::new(DockerRuntimeConfig {
+            mount_workspace: false,
+            ..test_spawner().config
+        });
+        let request = DockerAgentSpawnRequest {
+            container_name: "agent-workspace-disabled".into(),
+            image: "ghcr.io/nauron-ai/labaclaw:dev".into(),
+            host_config_dir: std::env::temp_dir(),
+            container_config_dir: "/agent".into(),
+            workspace_mounts: vec![AgentWorkspaceMount {
+                host_path: std::env::temp_dir(),
+                container_path: "/workspace".into(),
+                read_only: true,
+            }],
+            env: HashMap::new(),
+            labels: HashMap::new(),
+        };
+
+        let error = spawner
+            .build_spawn_command(&request)
+            .expect_err("workspace mounts must be rejected");
+        let message = error.to_string();
+        assert!(message.contains("Failed to validate workspace mount"));
+        assert!(message.contains(&std::env::temp_dir().display().to_string()));
+    }
+
+    #[test]
+    fn build_spawn_command_normalizes_container_paths_once() {
+        let spawner = test_spawner();
+        let request = DockerAgentSpawnRequest {
+            container_name: "agent-normalized".into(),
+            image: "ghcr.io/nauron-ai/labaclaw:dev".into(),
+            host_config_dir: std::env::temp_dir(),
+            container_config_dir: " /agent ".into(),
+            workspace_mounts: vec![AgentWorkspaceMount {
+                host_path: std::env::temp_dir(),
+                container_path: " /mounted-workspaces/0 ".into(),
+                read_only: true,
+            }],
+            env: HashMap::new(),
+            labels: HashMap::new(),
+        };
+
+        let command = spawner.build_spawn_command(&request).expect("must build");
+        let debug = format!("{command:?}");
+
+        assert!(debug.contains("LABACLAW_CONFIG_DIR=/agent"));
+        assert!(debug.contains("\"/agent\""));
+        assert!(!debug.contains(" /agent "));
+        assert!(!debug.contains(" /mounted-workspaces/0 "));
     }
 }
