@@ -13,7 +13,7 @@ use {
     rdkafka::message::{Header, OwnedHeaders},
     rdkafka::producer::{FutureProducer, FutureRecord},
     std::sync::Arc,
-    tokio::time::Duration,
+    tokio::time::{timeout, Duration},
 };
 
 const CONTROL_PLANE_DIR: &str = "control-plane";
@@ -24,6 +24,10 @@ pub const COMMAND_TYPE_SUSPEND_AGENT_REQUESTED: &str = "SuspendAgentRequested";
 pub const COMMAND_TYPE_RESUME_AGENT_REQUESTED: &str = "ResumeAgentRequested";
 pub const COMMAND_TYPE_TERMINATE_AGENT_REQUESTED: &str = "TerminateAgentRequested";
 pub const COMMAND_TYPE_TASK_ASSIGNED: &str = "TaskAssigned";
+#[cfg(feature = "worker-plane-distributed")]
+const ARTIFACT_IO_TIMEOUT: Duration = Duration::from_secs(20);
+#[cfg(feature = "worker-plane-distributed")]
+const MESSAGE_PUBLISH_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkerPlaneArtifactRefs {
@@ -262,10 +266,13 @@ pub async fn upload_bytes_to_artifact_ref(
         let (bucket, key) = parse_s3_uri(artifact_ref)?;
         ensure_bucket_matches_config(config, &bucket)?;
         let store = build_artifact_store(config)?;
-        store
-            .put(&ObjectStorePath::from(key), bytes.into())
-            .await
-            .with_context(|| format!("Failed to upload artifact to {artifact_ref}"))?;
+        timeout(
+            ARTIFACT_IO_TIMEOUT,
+            store.put(&ObjectStorePath::from(key), bytes.into()),
+        )
+        .await
+        .with_context(|| format!("Timed out uploading artifact to {artifact_ref}"))?
+        .with_context(|| format!("Failed to upload artifact to {artifact_ref}"))?;
         Ok(())
     }
 }
@@ -285,12 +292,14 @@ pub async fn download_bytes_from_artifact_ref(
         let (bucket, key) = parse_s3_uri(artifact_ref)?;
         ensure_bucket_matches_config(config, &bucket)?;
         let store = build_artifact_store(config)?;
-        let bytes = store
-            .get(&ObjectStorePath::from(key))
+        let bytes = timeout(ARTIFACT_IO_TIMEOUT, store.get(&ObjectStorePath::from(key)))
             .await
+            .with_context(|| format!("Timed out fetching artifact from {artifact_ref}"))?
             .with_context(|| format!("Failed to fetch artifact from {artifact_ref}"))?
-            .bytes()
+            .bytes();
+        let bytes = timeout(ARTIFACT_IO_TIMEOUT, bytes)
             .await
+            .with_context(|| format!("Timed out reading artifact bytes from {artifact_ref}"))?
             .with_context(|| format!("Failed to read artifact bytes from {artifact_ref}"))?;
         Ok(bytes.to_vec())
     }
@@ -318,19 +327,25 @@ pub async fn publish_json_message(
             key: MESSAGE_TYPE_HEADER,
             value: Some(message_type),
         });
-        producer
-            .send(
+        timeout(
+            MESSAGE_PUBLISH_TIMEOUT,
+            producer.send(
                 FutureRecord::to(topic)
                     .payload(&serialized)
                     .key(agent_id)
                     .headers(headers),
                 Duration::from_secs(10),
-            )
-            .await
-            .map_err(|(error, _message)| error)
-            .with_context(|| {
-                format!("Failed to publish {message_type} for agent {agent_id} to topic {topic}")
-            })?;
+            ),
+        )
+        .await
+        .with_context(|| {
+            format!("Timed out publishing {message_type} for agent {agent_id} to topic {topic}")
+        })?
+        .await
+        .map_err(|(error, _message)| error)
+        .with_context(|| {
+            format!("Failed to publish {message_type} for agent {agent_id} to topic {topic}")
+        })?;
         Ok(())
     }
 }

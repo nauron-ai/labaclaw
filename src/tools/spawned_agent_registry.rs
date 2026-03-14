@@ -520,6 +520,7 @@ fn parse_service_state(
     task_state: &SpawnedAgentTaskState,
 ) -> SpawnedAgentServiceState {
     match raw.as_deref() {
+        Some("provisioning") | Some("queued") => SpawnedAgentServiceState::Provisioning,
         Some("running") => SpawnedAgentServiceState::Running,
         Some("suspended") => SpawnedAgentServiceState::Suspended,
         Some("failed") => SpawnedAgentServiceState::Failed,

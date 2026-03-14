@@ -62,6 +62,24 @@ impl SpawnedAgentRuntimeState {
     }
 }
 
+pub async fn update_external_runtime_state<F>(
+    agent_home: &Path,
+    agent_id: &str,
+    mutate: F,
+) -> Result<SpawnedAgentRuntimeState>
+where
+    F: FnOnce(&mut SpawnedAgentRuntimeState),
+{
+    let state_path = runtime_state_path(agent_home);
+    let mut state = read_runtime_state(&state_path)
+        .await?
+        .unwrap_or_else(|| SpawnedAgentRuntimeState::new(agent_id.to_owned()));
+    mutate(&mut state);
+    refresh_heartbeat(&mut state);
+    persist_state(&state_path, &state).await?;
+    Ok(state)
+}
+
 pub fn agent_home_from_config(config: &Config) -> PathBuf {
     config
         .config_path
