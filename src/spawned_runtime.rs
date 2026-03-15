@@ -17,11 +17,17 @@ const BOOTSTRAP_ACTIVE_FILE: &str = "bootstrap-request.active.json";
 const BOOTSTRAP_DONE_FILE: &str = "bootstrap-request.done.json";
 const RUNTIME_STATE_FILE: &str = "runtime_state.json";
 const BOOTSTRAP_RESULT_FILE: &str = "BOOTSTRAP_RESULT.md";
+const BOOTSTRAP_RESULT_JSON_FILE: &str = "BOOTSTRAP_RESULT.json";
+const BOOTSTRAP_QUESTION_FILE: &str = "BOOTSTRAP_QUESTION.md";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpawnedAgentTaskRequest {
     pub request_id: String,
     pub message: String,
+    #[serde(default)]
+    pub pack_id: Option<String>,
+    #[serde(default)]
+    pub task_profile: Option<String>,
     pub max_history_messages: Option<usize>,
     pub max_tool_iterations: Option<usize>,
     pub compact_context: bool,
@@ -40,6 +46,8 @@ pub struct SpawnedAgentRuntimeState {
     pub last_heartbeat_at: String,
     pub completed_at: Option<String>,
     pub result_path: Option<String>,
+    pub result_metadata_path: Option<String>,
+    pub question_path: Option<String>,
     pub error: Option<String>,
 }
 
@@ -57,6 +65,8 @@ impl SpawnedAgentRuntimeState {
             last_heartbeat_at: now,
             completed_at: None,
             result_path: None,
+            result_metadata_path: None,
+            question_path: None,
             error: None,
         }
     }
@@ -110,6 +120,16 @@ pub fn runtime_state_path(agent_home: &Path) -> PathBuf {
 
 pub fn bootstrap_result_path(agent_home: &Path) -> PathBuf {
     agent_home.join("workspace").join(BOOTSTRAP_RESULT_FILE)
+}
+
+pub fn bootstrap_result_json_path(agent_home: &Path) -> PathBuf {
+    agent_home
+        .join("workspace")
+        .join(BOOTSTRAP_RESULT_JSON_FILE)
+}
+
+pub fn bootstrap_question_path(agent_home: &Path) -> PathBuf {
+    agent_home.join("workspace").join(BOOTSTRAP_QUESTION_FILE)
 }
 
 pub async fn write_task_request(
@@ -232,6 +252,8 @@ async fn process_request(
     state.completed_at = None;
     state.error = None;
     state.result_path = None;
+    state.result_metadata_path = None;
+    state.question_path = None;
     refresh_heartbeat(state);
     persist_state(state_path, state).await?;
     write_event(
@@ -279,6 +301,8 @@ async fn process_request(
             state.current_request_id = None;
             state.completed_at = Some(Utc::now().to_rfc3339());
             state.result_path = Some(result_ref.clone());
+            state.result_metadata_path = None;
+            state.question_path = None;
             refresh_heartbeat(state);
             persist_state(state_path, state).await?;
             finalize_request(agent_home, active_path).await?;
@@ -301,6 +325,7 @@ async fn process_request(
             state.current_request_id = None;
             state.completed_at = Some(Utc::now().to_rfc3339());
             state.error = Some(error.to_string());
+            state.question_path = None;
             refresh_heartbeat(state);
             persist_state(state_path, state).await?;
             finalize_request(agent_home, active_path).await?;

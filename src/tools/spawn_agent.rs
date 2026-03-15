@@ -458,13 +458,6 @@ impl Tool for SpawnAgentTool {
             })
             .collect::<Vec<_>>();
 
-        let initial_mission = build_initial_mission(
-            &request.task,
-            &request.context,
-            &workspace_mounts,
-            task_profile,
-        );
-
         let spec = build_agent_spec(AgentSpecBuildRequest {
             agent_id: &agent_id,
             display_name: &request.agent_name,
@@ -474,12 +467,19 @@ impl Tool for SpawnAgentTool {
             image: image.clone(),
             workspace_mounts: &workspace_mounts,
             selected_models: &selected_models,
-            initial_mission: initial_mission.clone(),
+            initial_mission: build_initial_mission(
+                &request.task,
+                &request.context,
+                &workspace_mounts,
+                task_profile,
+                &pack.pack_id,
+            ),
             network: self.root_config.runtime.docker.network.clone(),
             memory_limit_mb: self.root_config.runtime.docker.memory_limit_mb,
             cpu_limit: self.root_config.runtime.docker.cpu_limit,
             read_only_rootfs: self.root_config.runtime.docker.read_only_rootfs,
         });
+        let initial_mission = spec.initial_mission.clone();
 
         let agent_home = self.labaclaw_dir.join("spawned-agents").join(&agent_id);
         let runtime_state_path = runtime_state_path(&agent_home);
@@ -683,6 +683,8 @@ async fn run_spawn_workflow(
     let boot_request = SpawnedAgentTaskRequest {
         request_id: Uuid::new_v4().to_string(),
         message: boot_message.clone(),
+        pack_id: Some(spec.pack_id.clone()),
+        task_profile: Some(spec.task_profile.clone()),
         max_history_messages: Some(16),
         max_tool_iterations: Some(root_config.agent.max_tool_iterations.min(12)),
         compact_context: matches!(spec.reasoning_policy.as_str(), "minimal" | "standard")
@@ -1062,20 +1064,20 @@ fn parse_request(args: &serde_json::Value, default_workspace: &Path) -> Result<S
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned);
-    let workspace_mounts = args
+    let workspace_mounts = if let Some(values) = args
         .get("workspace_mounts")
         .and_then(|value| value.as_array())
-        .map(|values| {
-            values
-                .iter()
-                .filter_map(|value| value.as_str())
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(PathBuf::from)
-                .collect::<Vec<_>>()
-        })
-        .filter(|paths| !paths.is_empty())
-        .unwrap_or_else(|| vec![default_workspace.to_path_buf()]);
+    {
+        values
+            .iter()
+            .filter_map(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .collect::<Vec<_>>()
+    } else {
+        vec![default_workspace.to_path_buf()]
+    };
     let workspace_write_access = args
         .get("workspace_write_access")
         .and_then(|value| value.as_bool())
@@ -1241,6 +1243,54 @@ fn derive_pack_profile(
             } else if contains_any(
                 &lowered,
                 &[
+                    "technical analysis",
+                    "analiza techniczna",
+                    "trade setup",
+                    "ticker",
+                    "timeframe",
+                    "rsi",
+                    "macd",
+                    "support",
+                    "resistance",
+                    "stop loss",
+                    "take profit",
+                ],
+            ) {
+                "market_technical_analyst".to_string()
+            } else if contains_any(
+                &lowered,
+                &[
+                    "requirements",
+                    "wymagania",
+                    "brief",
+                    "prd",
+                    "spec",
+                    "architecture",
+                    "architekt",
+                    "analysis",
+                    "analiza",
+                ],
+            ) {
+                "requirements_analyst".to_string()
+            } else if contains_any(
+                &lowered,
+                &[
+                    "rust",
+                    "cargo",
+                    "compile",
+                    "build",
+                    "test",
+                    "cli",
+                    "binary",
+                    "application",
+                    "kalkulator",
+                    "calculator",
+                ],
+            ) {
+                "software_builder".to_string()
+            } else if contains_any(
+                &lowered,
+                &[
                     "code", "repo", "service", "api", "bug", "refactor", "software",
                 ],
             ) {
@@ -1323,6 +1373,123 @@ fn derive_pack_profile(
                 "xlsx_read".into(),
                 "docx_read".into(),
                 "pptx_read".into(),
+                "memory_observe".into(),
+                "memory_store".into(),
+            ],
+            allowed_commands: Vec::new(),
+            compact_context: false,
+        },
+        "software_builder" => PackProfile {
+            pack_id,
+            role: "Software Delivery Specialist".into(),
+            operating_style: vec![
+                "Clarify scope before implementation when requirements are incomplete.".into(),
+                "Prefer verified builds and tests over unverified code output.".into(),
+            ],
+            responsibilities: vec![
+                "Implement the requested software change inside the agent workspace.".into(),
+                "Compile and validate the result before reporting success.".into(),
+                "Return build evidence and generated artifacts to the orchestrator.".into(),
+            ],
+            prohibitions: vec![
+                "Do not contact the human directly.".into(),
+                "Do not create or spawn additional agents.".into(),
+                "Do not report success before the requested build/test commands pass.".into(),
+            ],
+            capabilities: vec![
+                "software_delivery".into(),
+                "code_generation".into(),
+                "build_verification".into(),
+            ],
+            allowed_tools: vec![
+                "task_plan".into(),
+                "file_read".into(),
+                "file_write".into(),
+                "file_edit".into(),
+                "apply_patch".into(),
+                "glob_search".into(),
+                "content_search".into(),
+                "git_operations".into(),
+                "shell".into(),
+                "memory_observe".into(),
+                "memory_store".into(),
+            ],
+            allowed_commands: vec![
+                "bash".into(),
+                "sh".into(),
+                "git".into(),
+                "rg".into(),
+                "cargo".into(),
+                "rustc".into(),
+                "npm".into(),
+                "pnpm".into(),
+                "python3".into(),
+                "pytest".into(),
+            ],
+            compact_context: false,
+        },
+        "requirements_analyst" => PackProfile {
+            pack_id,
+            role: "Requirements Analysis Specialist".into(),
+            operating_style: vec![
+                "Reduce ambiguity before execution.".into(),
+                "Separate clarifications from implementation decisions.".into(),
+            ],
+            responsibilities: vec![
+                "Prepare a concise implementation brief for the orchestrator.".into(),
+                "Surface missing information as explicit questions.".into(),
+                "Keep execution recommendations grounded in the supplied scope.".into(),
+            ],
+            prohibitions: vec![
+                "Do not contact the human directly.".into(),
+                "Do not create product artifacts or code deliverables.".into(),
+                "Do not create or spawn additional agents.".into(),
+            ],
+            capabilities: vec![
+                "requirements_analysis".into(),
+                "brief_synthesis".into(),
+                "scope_clarification".into(),
+            ],
+            allowed_tools: vec![
+                "task_plan".into(),
+                "file_read".into(),
+                "glob_search".into(),
+                "content_search".into(),
+                "memory_observe".into(),
+                "memory_store".into(),
+            ],
+            allowed_commands: Vec::new(),
+            compact_context: false,
+        },
+        "market_technical_analyst" => PackProfile {
+            pack_id,
+            role: "Market Technical Analysis Specialist".into(),
+            operating_style: vec![
+                "Use only the supplied market snapshot and assumptions.".into(),
+                "Return actionable trade setups with explicit risks.".into(),
+            ],
+            responsibilities: vec![
+                "Analyze supplied market structure, indicators, and levels.".into(),
+                "Return a structured trade setup for the orchestrator.".into(),
+                "State assumptions and missing data explicitly.".into(),
+            ],
+            prohibitions: vec![
+                "Do not contact the human directly.".into(),
+                "Do not fabricate market data or price action.".into(),
+                "Do not create or spawn additional agents.".into(),
+            ],
+            capabilities: vec![
+                "market_technical_analysis".into(),
+                "trade_setup".into(),
+                "structured_reporting".into(),
+            ],
+            allowed_tools: vec![
+                "task_plan".into(),
+                "file_read".into(),
+                "glob_search".into(),
+                "content_search".into(),
+                "http_request".into(),
+                "web_fetch".into(),
                 "memory_observe".into(),
                 "memory_store".into(),
             ],
@@ -1920,6 +2087,7 @@ fn build_initial_mission(
     context: &str,
     workspace_mounts: &[AgentWorkspaceMountSpec],
     task_profile: TaskProfile,
+    pack_id: &str,
 ) -> String {
     let mut prompt = String::new();
     prompt.push_str("You are a dedicated child agent created by the orchestrator.\n");
@@ -1952,6 +2120,19 @@ fn build_initial_mission(
     prompt.push_str("- If data is insufficient, state exactly what is missing under the header 'QUESTION FOR ORCHESTRATOR'.\n");
     prompt.push_str("- Return the final answer under the header 'RESULT FOR ORCHESTRATOR'.\n");
     prompt.push_str("- Include assumptions, key findings, and next actions.\n");
+    if pack_id == "software_builder" {
+        prompt.push_str("- Do not modify the orchestrator workspace directly unless explicitly mounted for that purpose.\n");
+        prompt.push_str("- Before reporting success, run the required build/test commands and include their outcome.\n");
+        prompt.push_str("- If the interface or delivery target is ambiguous, stop and return a clarification request under 'QUESTION FOR ORCHESTRATOR' before writing code.\n");
+    } else if pack_id == "requirements_analyst" {
+        prompt.push_str("- Your job is to reduce ambiguity, not to implement the final product.\n");
+        prompt.push_str("- Return either a concise implementation brief or a clarification request under 'QUESTION FOR ORCHESTRATOR'.\n");
+        prompt.push_str("- Do not produce product code, builds, or direct workspace writes.\n");
+    } else if pack_id == "market_technical_analyst" {
+        prompt.push_str("- Return a trade setup, not generic market prose.\n");
+        prompt.push_str("- Include bias, levels, thesis, entry, invalidation, take-profit targets, risks, and a disclaimer that this is not investment advice.\n");
+        prompt.push_str("- Use only supplied market inputs and call out missing data instead of inventing it.\n");
+    }
     prompt
 }
 
@@ -2456,6 +2637,36 @@ mod tests {
         let resolved = resolve_spawn_image(None, &config, true).unwrap();
 
         assert_eq!(resolved, "worker-plane-managed");
+    }
+
+    #[test]
+    fn parse_request_keeps_explicit_empty_workspace_mounts() {
+        let tmp = TempDir::new().unwrap();
+        let request = parse_request(
+            &json!({
+                "agent_name": "Rust Builder",
+                "task": "Implement calculator",
+                "workspace_mounts": [],
+            }),
+            tmp.path(),
+        )
+        .unwrap();
+
+        assert!(request.workspace_mounts.is_empty());
+    }
+
+    #[test]
+    fn software_builder_initial_mission_requires_clarification_and_build() {
+        let mission = build_initial_mission(
+            "Build a Rust CLI calculator",
+            "",
+            &[],
+            TaskProfile::DeepReasoning,
+            "software_builder",
+        );
+
+        assert!(mission.contains("run the required build/test commands"));
+        assert!(mission.contains("return a clarification request"));
     }
 
     #[test]

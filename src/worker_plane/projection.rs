@@ -1,6 +1,9 @@
 use crate::config::Config;
 #[cfg(feature = "worker-plane-distributed")]
-use crate::spawned_runtime::{bootstrap_result_path, update_external_runtime_state};
+use crate::spawned_runtime::{
+    bootstrap_question_path, bootstrap_result_json_path, bootstrap_result_path,
+    update_external_runtime_state,
+};
 #[cfg(feature = "worker-plane-distributed")]
 use crate::worker_plane::worker_plane_enabled;
 #[cfg(feature = "worker-plane-distributed")]
@@ -141,21 +144,38 @@ async fn apply_projection_message(config: &Config, message: &BorrowedMessage<'_>
         }
         "AgentQuestionRaised" => {
             let request_id = json_string(&json, &["request_id"]);
+            let question_ref = json_string(&json, &["question_ref"]);
+            let question_summary = json_string(&json, &["question_summary"]);
+            let local_question_path = materialize_question_artifact(
+                config,
+                &agent_home,
+                question_ref.as_deref(),
+                question_summary.as_deref(),
+            )
+            .await?;
             update_external_runtime_state(&agent_home, &agent_id, |state| {
                 state.lifecycle_status = "running".into();
-                state.task_status = "running".into();
+                state.task_status = "questions_pending".into();
                 if let Some(request_id) = request_id {
                     state.current_request_id = Some(request_id.clone());
                     state.last_request_id = Some(request_id);
                 }
+                state.question_path = local_question_path.clone();
+                state.result_path = None;
+                state.result_metadata_path = None;
+                state.error = None;
             })
             .await?;
         }
         "AgentCompleted" => {
             let request_id = json_string(&json, &["request_id"]);
             let result_ref = json_string(&json, &["result_ref"]);
+            let result_json_ref = json_string(&json, &["result_json_ref"]);
             let local_result_path =
                 materialize_result_artifact(config, &agent_home, result_ref.as_deref()).await?;
+            let local_result_json_path =
+                materialize_result_metadata(config, &agent_home, result_json_ref.as_deref())
+                    .await?;
             update_external_runtime_state(&agent_home, &agent_id, |state| {
                 state.lifecycle_status = "running".into();
                 state.task_status = "completed".into();
@@ -165,6 +185,8 @@ async fn apply_projection_message(config: &Config, message: &BorrowedMessage<'_>
                 }
                 state.completed_at = Some(chrono::Utc::now().to_rfc3339());
                 state.result_path = local_result_path.clone();
+                state.result_metadata_path = local_result_json_path.clone();
+                state.question_path = None;
                 state.error = None;
             })
             .await?;
@@ -180,6 +202,7 @@ async fn apply_projection_message(config: &Config, message: &BorrowedMessage<'_>
                     state.last_request_id = Some(request_id);
                 }
                 state.completed_at = Some(chrono::Utc::now().to_rfc3339());
+                state.question_path = None;
                 state.error = error;
             })
             .await?;
@@ -195,6 +218,7 @@ async fn apply_projection_message(config: &Config, message: &BorrowedMessage<'_>
                 state.lifecycle_status = "terminated".into();
                 state.current_request_id = None;
                 state.completed_at = Some(chrono::Utc::now().to_rfc3339());
+                state.question_path = None;
             })
             .await?;
         }
@@ -210,26 +234,93 @@ async fn materialize_result_artifact(
     agent_home: &Path,
     result_ref: Option<&str>,
 ) -> Result<Option<String>> {
-    let Some(result_ref) = result_ref else {
+    materialize_artifact_ref(
+        config,
+        result_ref,
+        &bootstrap_result_path(agent_home),
+        "result artifact",
+    )
+    .await
+}
+
+#[cfg(feature = "worker-plane-distributed")]
+async fn materialize_result_metadata(
+    config: &Config,
+    agent_home: &Path,
+    result_ref: Option<&str>,
+) -> Result<Option<String>> {
+    materialize_artifact_ref(
+        config,
+        result_ref,
+        &bootstrap_result_json_path(agent_home),
+        "result metadata artifact",
+    )
+    .await
+}
+
+#[cfg(feature = "worker-plane-distributed")]
+async fn materialize_question_artifact(
+    config: &Config,
+    agent_home: &Path,
+    question_ref: Option<&str>,
+    question_summary: Option<&str>,
+) -> Result<Option<String>> {
+    if let Some(question_ref) = question_ref {
+        return materialize_artifact_ref(
+            config,
+            Some(question_ref),
+            &bootstrap_question_path(agent_home),
+            "question artifact",
+        )
+        .await;
+    }
+
+    let Some(question_summary) = question_summary else {
         return Ok(None);
     };
 
-    match download_bytes_from_artifact_ref(&config.worker_plane, result_ref).await {
+    let path = bootstrap_question_path(agent_home);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .await
+            .with_context(|| format!("Failed to create {}", parent.display()))?;
+    }
+    fs::write(&path, question_summary.as_bytes())
+        .await
+        .with_context(|| format!("Failed to write {}", path.display()))?;
+    Ok(Some(local_file_ref(&path)))
+}
+
+#[cfg(feature = "worker-plane-distributed")]
+async fn materialize_artifact_ref(
+    config: &Config,
+    artifact_ref: Option<&str>,
+    destination: &Path,
+    artifact_kind: &str,
+) -> Result<Option<String>> {
+    let Some(artifact_ref) = artifact_ref else {
+        return Ok(None);
+    };
+
+    match download_bytes_from_artifact_ref(&config.worker_plane, artifact_ref).await {
         Ok(bytes) => {
-            let path = bootstrap_result_path(agent_home);
-            if let Some(parent) = path.parent() {
+            if let Some(parent) = destination.parent() {
                 fs::create_dir_all(parent)
                     .await
                     .with_context(|| format!("Failed to create {}", parent.display()))?;
             }
-            fs::write(&path, bytes)
+            fs::write(destination, bytes)
                 .await
-                .with_context(|| format!("Failed to write {}", path.display()))?;
-            Ok(Some(local_file_ref(&path)))
+                .with_context(|| format!("Failed to write {}", destination.display()))?;
+            Ok(Some(local_file_ref(destination)))
         }
         Err(error) => {
-            warn!(result_ref, error = %error, "worker-plane projector: failed to materialize result artifact");
-            Ok(Some(result_ref.to_string()))
+            warn!(
+                artifact_ref,
+                error = %error,
+                "worker-plane projector: failed to materialize {artifact_kind}"
+            );
+            Ok(Some(artifact_ref.to_string()))
         }
     }
 }

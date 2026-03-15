@@ -13,7 +13,7 @@ use crate::runtime;
 use crate::security::{CanaryGuard, SecurityPolicy};
 use crate::tools::{self, Tool};
 use crate::util::truncate_with_ellipsis;
-use anyhow::Result;
+use anyhow::{Context as AnyhowContext, Result};
 use regex::{Regex, RegexSet};
 use rustyline::completion::{Completer, Pair};
 use rustyline::error::ReadlineError;
@@ -26,7 +26,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write;
 use std::future::Future;
 use std::io::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
@@ -84,10 +84,27 @@ fn filter_primary_agent_tools_or_fail(
     config: &Config,
     tools_registry: Vec<Box<dyn Tool>>,
 ) -> Result<Vec<Box<dyn Tool>>> {
+    let mut denied_tools = config.agent.denied_tools.clone();
+    if crate::worker_plane::worker_plane_enabled(&config.worker_plane) {
+        denied_tools.extend(
+            [
+                "shell",
+                "process",
+                "git_operations",
+                "file_write",
+                "file_edit",
+                "apply_patch",
+                "openclaw_migration",
+            ]
+            .into_iter()
+            .map(str::to_string),
+        );
+    }
+
     let (filtered_tools, report) = tools::filter_primary_agent_tools(
         tools_registry,
         &config.agent.allowed_tools,
-        &config.agent.denied_tools,
+        &denied_tools,
     );
 
     for unmatched in report.unmatched_allowed_tools {
@@ -102,11 +119,7 @@ fn filter_primary_agent_tools_or_fail(
         .allowed_tools
         .iter()
         .any(|entry| !entry.trim().is_empty());
-    let has_agent_denylist = config
-        .agent
-        .denied_tools
-        .iter()
-        .any(|entry| !entry.trim().is_empty());
+    let has_agent_denylist = denied_tools.iter().any(|entry| !entry.trim().is_empty());
     if has_agent_allowlist
         && has_agent_denylist
         && report.allowlist_match_count > 0
@@ -140,6 +153,638 @@ fn should_treat_provider_as_vision_capable(provider_name: &str, provider: &dyn P
     // vision.
     let normalized = provider_name.trim().to_ascii_lowercase();
     normalized == "anthropic" || normalized.starts_with("anthropic-custom:")
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ResponsibilityDecision {
+    AskUser(String),
+    SynthesizeBrief(ResponsibilityBrief),
+    DelegateAnalysis(DelegatedMission),
+    DelegateExecution(DelegatedMission),
+    WaitForWorker(String),
+    ReportToUser(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ResponsibilityBrief {
+    title: String,
+    summary: String,
+    acceptance_criteria: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DelegatedMission {
+    agent_name: String,
+    task: String,
+    context: String,
+    pack_id: String,
+    capabilities: Vec<String>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
+enum DelegatedAgentOutcome {
+    Completed {
+        result: String,
+        metadata: Option<serde_json::Value>,
+    },
+    Question(String),
+}
+
+fn maybe_prepare_responsibility_decision(message: &str) -> Option<ResponsibilityDecision> {
+    let current_message = extract_current_user_message(message);
+    maybe_prepare_dev_calculator_decision(current_message)
+        .or_else(|| maybe_prepare_market_ta_decision(current_message))
+}
+
+fn extract_current_user_message(message: &str) -> &str {
+    const CURRENT_MESSAGE_MARKER: &str = "\n\nCurrent message:\n";
+    message
+        .split_once(CURRENT_MESSAGE_MARKER)
+        .map(|(_, current)| current.trim())
+        .filter(|current| !current.is_empty())
+        .unwrap_or(message.trim())
+}
+
+fn contains_any_case_insensitive(haystack: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|needle| haystack.contains(needle))
+}
+
+fn contains_any_token_case_insensitive(haystack: &str, needles: &[&str]) -> bool {
+    let tokens = haystack
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .collect::<Vec<_>>();
+    needles
+        .iter()
+        .any(|needle| tokens.iter().any(|token| token == needle))
+}
+
+fn maybe_prepare_dev_calculator_decision(message: &str) -> Option<ResponsibilityDecision> {
+    let lowered = message.to_ascii_lowercase();
+    let calculator_like =
+        contains_any_case_insensitive(
+            &lowered,
+            &[
+                "calculator",
+                "kalkulator",
+                "expression evaluator",
+                "parser arithmetic",
+            ],
+        ) || (contains_any_case_insensitive(&lowered, &["wyrażeń", "wyrazen", "expression"])
+            && contains_any_case_insensitive(&lowered, &["rust", "cargo", "cli", "library"]));
+    if !calculator_like {
+        return None;
+    }
+
+    if is_large_or_heavy_scope(&lowered)
+        && contains_any_case_insensitive(
+            &lowered,
+            &[
+                "brief",
+                "prd",
+                "requirements",
+                "wymagania",
+                "architecture",
+                "architekt",
+                "design",
+                "spec",
+                "analysis",
+                "analiza",
+            ],
+        )
+    {
+        return Some(ResponsibilityDecision::DelegateAnalysis(
+            build_requirements_analyst_mission(message),
+        ));
+    }
+
+    let rust_specified = contains_any_case_insensitive(&lowered, &["rust", "cargo"]);
+    let interface_specified =
+        contains_any_case_insensitive(&lowered, &["command line", "terminal", "stdin", "stdout"])
+            || contains_any_token_case_insensitive(&lowered, &["cli", "library", "crate"]);
+    let input_format_specified = contains_any_case_insensitive(
+        &lowered,
+        &[
+            "expression",
+            "wyraż",
+            "wyrazen",
+            "argv",
+            "argument",
+            "stdin",
+            "single quoted",
+        ],
+    );
+    let operators_specified = contains_any_case_insensitive(
+        &lowered,
+        &[
+            "operator",
+            "operations",
+            "dodaw",
+            "odejm",
+            "mnoż",
+            "mnoz",
+            "dziel",
+        ],
+    ) || (message.contains('+')
+        && message.contains('-')
+        && message.contains('*')
+        && message.contains('/'));
+    let floats_specified =
+        contains_any_case_insensitive(&lowered, &["float", "floating", "zmiennoprzecink", "f64"]);
+    let parentheses_specified =
+        contains_any_case_insensitive(&lowered, &["parentheses", "parenthesis", "nawias"]);
+    let unary_minus_specified =
+        contains_any_case_insensitive(&lowered, &["unary minus", "minus jednoargument", "unary"]);
+    let delivery_specified = contains_any_case_insensitive(
+        &lowered,
+        &[
+            "artifact",
+            "artefact",
+            "artifacts",
+            "workspace",
+            "repo",
+            "repository",
+            "project",
+            "source files",
+            "delivery",
+            "build logs",
+        ],
+    );
+
+    let mut missing = Vec::new();
+    if !rust_specified {
+        missing.push("język/stack wykonania, na przykład Rust");
+    }
+    if !interface_specified {
+        missing.push("formę produktu, na przykład CLI albo biblioteka");
+    }
+    if !input_format_specified {
+        missing.push("format wejścia, na przykład pojedyncze wyrażenie przekazane jako argument");
+    }
+    if !operators_specified {
+        missing.push("zakres operacji, na przykład `+ - * /`");
+    }
+    if !floats_specified {
+        missing.push("czy liczby mają być zmiennoprzecinkowe `f64`");
+    }
+    if !parentheses_specified {
+        missing.push("obsługę nawiasów");
+    }
+    if !unary_minus_specified {
+        missing.push("czy unary minus też ma być wspierany");
+    }
+    if !delivery_specified {
+        missing
+            .push("target dostarczenia, na przykład artefakty workera albo integracja z workspace");
+    }
+
+    if !missing.is_empty() {
+        return Some(ResponsibilityDecision::AskUser(format!(
+            "Zanim wybiorę wykonawcę, doprecyzuj proszę: {}. Gdy to ustalimy, przygotuję brief i przekażę zadanie dedykowanemu builderowi, który dopiero wtedy wygeneruje kod oraz uruchomi `cargo test` i `cargo build --release`.",
+            missing.join(", ")
+        )));
+    }
+
+    let brief = synthesize_calculator_brief(message);
+    Some(ResponsibilityDecision::DelegateExecution(
+        build_software_builder_mission(message, &brief),
+    ))
+}
+
+fn maybe_prepare_market_ta_decision(message: &str) -> Option<ResponsibilityDecision> {
+    let lowered = message.to_ascii_lowercase();
+    if !contains_any_case_insensitive(
+        &lowered,
+        &[
+            "technical analysis",
+            "analiza techniczna",
+            "trade setup",
+            "ticker",
+            "timeframe",
+            "rsi",
+            "macd",
+            "support",
+            "resistance",
+            "stop loss",
+            "take profit",
+        ],
+    ) {
+        return None;
+    }
+
+    let ticker = extract_first_named_text(message, &["ticker", "instrument", "symbol"]);
+    let timeframe = extract_first_named_text(message, &["timeframe", "tf"]);
+    let horizon = extract_first_named_text(message, &["horizon", "holding"]);
+    let exchange = extract_first_named_text(message, &["exchange", "market"]);
+    let source = extract_first_named_text(message, &["source", "data", "chart"]);
+    let price = extract_named_number(message, "price");
+    let support = extract_named_number(message, "support");
+    let resistance = extract_named_number(message, "resistance");
+
+    let mut missing = Vec::new();
+    if ticker.is_none() {
+        missing.push("ticker/instrument");
+    }
+    if timeframe.is_none() {
+        missing.push("timeframe");
+    }
+    if horizon.is_none() {
+        missing.push("horizon");
+    }
+    if exchange.is_none() {
+        missing.push("exchange lub market context");
+    }
+    if source.is_none() {
+        missing.push("source chart/data");
+    }
+    if price.is_none() {
+        missing.push("price snapshot");
+    }
+    if support.is_none() {
+        missing.push("support level");
+    }
+    if resistance.is_none() {
+        missing.push("resistance level");
+    }
+
+    if !missing.is_empty() {
+        return Some(ResponsibilityDecision::AskUser(format!(
+            "Żeby przygotować setup z analizy technicznej, podaj proszę: {}. Najwygodniej w formacie `ticker=... timeframe=... horizon=... exchange=... source=... price=... support=... resistance=... rsi=... macd=... trend=...`.",
+            missing.join(", ")
+        )));
+    }
+
+    let brief = synthesize_market_ta_brief(message);
+    Some(ResponsibilityDecision::DelegateExecution(
+        build_market_ta_mission(message, &brief),
+    ))
+}
+
+fn is_large_or_heavy_scope(lowered: &str) -> bool {
+    lowered.split_whitespace().count() >= 40
+        || contains_any_case_insensitive(
+            lowered,
+            &[
+                "roadmap",
+                "multi-step",
+                "wiel etap",
+                "epic",
+                "milestone",
+                "acceptance criteria",
+                "out of scope",
+            ],
+        )
+}
+
+fn synthesize_calculator_brief(message: &str) -> ResponsibilityBrief {
+    let lowered = message.to_ascii_lowercase();
+    let interface = if contains_any_token_case_insensitive(&lowered, &["library", "crate"]) {
+        "library crate with expression evaluation entrypoint"
+    } else {
+        "CLI executable"
+    };
+    let input = if contains_any_case_insensitive(&lowered, &["stdin"]) {
+        "single expression read from stdin"
+    } else {
+        "single expression passed as a command-line argument"
+    };
+    let delivery = if contains_any_case_insensitive(&lowered, &["workspace", "repo", "repository"])
+    {
+        "return validated artifacts for orchestrator-controlled integration into the workspace"
+    } else {
+        "return validated source artifacts and build logs to the orchestrator"
+    };
+    ResponsibilityBrief {
+        title: "Rust floating-point calculator".into(),
+        summary: format!(
+            "Deliver a {interface} in Rust that evaluates arithmetic expressions over `f64` values. The input is {input}. The worker must support `+ - * /`, parentheses, and unary minus, and it must {delivery}.",
+        ),
+        acceptance_criteria: vec![
+            "Project is created only inside the delegated worker workspace.".into(),
+            "Implementation supports `f64`, `+ - * /`, parentheses, and unary minus.".into(),
+            "`cargo test --quiet` passes.".into(),
+            "`cargo build --release --quiet` passes.".into(),
+            "Source files and build logs are returned as worker artifacts.".into(),
+        ],
+    }
+}
+
+fn synthesize_market_ta_brief(message: &str) -> ResponsibilityBrief {
+    let ticker = extract_first_named_text(message, &["ticker", "instrument", "symbol"])
+        .unwrap_or_else(|| "unknown instrument".into());
+    let timeframe = extract_first_named_text(message, &["timeframe", "tf"])
+        .unwrap_or_else(|| "unknown timeframe".into());
+    let horizon = extract_first_named_text(message, &["horizon", "holding"])
+        .unwrap_or_else(|| "unknown horizon".into());
+    ResponsibilityBrief {
+        title: format!("Market technical analysis for {ticker}"),
+        summary: format!(
+            "Prepare a trade setup for {ticker} on {timeframe} with horizon {horizon}. Use only the supplied market snapshot and return bias, levels, thesis, entry, invalidation, take-profit targets, risks, and a non-investment-advice disclaimer."
+        ),
+        acceptance_criteria: vec![
+            "Trade setup includes bias, entry, invalidation, and take-profit targets.".into(),
+            "Rationale references only supplied data assumptions and price structure.".into(),
+            "Response includes explicit risks and disclaimer.".into(),
+            "No fabricated market inputs are introduced.".into(),
+        ],
+    }
+}
+
+fn build_requirements_analyst_mission(message: &str) -> DelegatedMission {
+    let brief = ResponsibilityBrief {
+        title: "Implementation brief synthesis".into(),
+        summary: "The user request is too broad or requirements-heavy for the front orchestrator model. Prepare a concise implementation brief, identify missing information, and keep the human interaction routed through the orchestrator.".into(),
+        acceptance_criteria: vec![
+            "Return either a concise implementation brief or a concrete clarification request.".into(),
+            "Do not implement product artifacts.".into(),
+            "Do not address the human directly.".into(),
+        ],
+    };
+    DelegatedMission {
+        agent_name: "requirements-analyst".into(),
+        task: message.to_string(),
+        context: render_brief_context(&brief),
+        pack_id: "requirements_analyst".into(),
+        capabilities: vec![
+            "requirements_analysis".into(),
+            "brief_synthesis".into(),
+            "clarification_management".into(),
+        ],
+    }
+}
+
+fn build_software_builder_mission(message: &str, brief: &ResponsibilityBrief) -> DelegatedMission {
+    DelegatedMission {
+        agent_name: "software-builder".into(),
+        task: message.to_string(),
+        context: render_brief_context(brief),
+        pack_id: "software_builder".into(),
+        capabilities: vec![
+            "software_delivery".into(),
+            "build_verification".into(),
+            "artifact_reporting".into(),
+        ],
+    }
+}
+
+fn build_market_ta_mission(message: &str, brief: &ResponsibilityBrief) -> DelegatedMission {
+    DelegatedMission {
+        agent_name: "market-technical-analyst".into(),
+        task: message.to_string(),
+        context: render_brief_context(brief),
+        pack_id: "market_technical_analyst".into(),
+        capabilities: vec![
+            "market_technical_analysis".into(),
+            "trade_setup".into(),
+            "structured_reporting".into(),
+        ],
+    }
+}
+
+fn render_brief_context(brief: &ResponsibilityBrief) -> String {
+    let mut context = format!("Orchestrator brief: {}\n{}\n", brief.title, brief.summary);
+    if !brief.acceptance_criteria.is_empty() {
+        context.push_str("Acceptance criteria:\n");
+        for item in &brief.acceptance_criteria {
+            let _ = writeln!(context, "- {item}");
+        }
+    }
+    context
+}
+
+fn extract_first_named_text(text: &str, labels: &[&str]) -> Option<String> {
+    labels
+        .iter()
+        .find_map(|label| extract_named_text(text, label))
+}
+
+fn extract_named_text(text: &str, label: &str) -> Option<String> {
+    let lower = text.to_ascii_lowercase();
+    let label = label.to_ascii_lowercase();
+    for separator in ["=", ":"].iter() {
+        let marker = format!("{label}{separator}");
+        if let Some(start) = lower.find(&marker) {
+            let raw = &text[start + marker.len()..];
+            let value = raw
+                .split(['\n', ',', ';'])
+                .next()
+                .map(str::trim)
+                .filter(|candidate| !candidate.is_empty())?;
+            return Some(value.to_string());
+        }
+    }
+    None
+}
+
+fn extract_named_number(text: &str, label: &str) -> Option<f64> {
+    extract_named_text(text, label)?.parse::<f64>().ok()
+}
+
+async fn maybe_handle_responsibility_decision(
+    config: &Config,
+    security: Arc<SecurityPolicy>,
+    message: &str,
+) -> Result<Option<String>> {
+    if !crate::worker_plane::worker_plane_enabled(&config.worker_plane) {
+        return Ok(None);
+    }
+
+    let Some(decision) = maybe_prepare_responsibility_decision(message) else {
+        return Ok(None);
+    };
+
+    match decision {
+        ResponsibilityDecision::AskUser(question) => Ok(Some(question)),
+        ResponsibilityDecision::SynthesizeBrief(brief) => Ok(Some(format!(
+            "Brief prepared by orchestrator.\n\n{}\n{}",
+            brief.title, brief.summary
+        ))),
+        ResponsibilityDecision::DelegateAnalysis(mission)
+        | ResponsibilityDecision::DelegateExecution(mission) => {
+            let outcome = execute_delegated_mission(config, security, mission).await?;
+            match outcome {
+                DelegatedAgentOutcome::Completed { result, .. } => Ok(Some(result)),
+                DelegatedAgentOutcome::Question(question) => Ok(Some(question)),
+            }
+        }
+        ResponsibilityDecision::WaitForWorker(agent_id) => {
+            let labaclaw_dir = config
+                .config_path
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .to_path_buf();
+            let outcome = wait_for_delegated_agent_outcome(&labaclaw_dir, &agent_id).await?;
+            match outcome {
+                DelegatedAgentOutcome::Completed { result, .. } => Ok(Some(result)),
+                DelegatedAgentOutcome::Question(question) => Ok(Some(question)),
+            }
+        }
+        ResponsibilityDecision::ReportToUser(report) => Ok(Some(report)),
+    }
+}
+
+async fn execute_delegated_mission(
+    config: &Config,
+    security: Arc<SecurityPolicy>,
+    mission: DelegatedMission,
+) -> Result<DelegatedAgentOutcome> {
+    let registry = Arc::new(crate::tools::SpawnedAgentRegistry::new());
+    let labaclaw_dir = config
+        .config_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf();
+    let tool = crate::tools::SpawnAgentTool::new(
+        Arc::new(config.clone()),
+        security,
+        registry,
+        labaclaw_dir.clone(),
+        runtime::DockerAgentSpawner::new(config.runtime.docker.clone()),
+    );
+    let tool_result = tool
+        .execute(serde_json::json!({
+            "agent_name": mission.agent_name,
+            "task": mission.task,
+            "context": mission.context,
+            "pack_id": mission.pack_id,
+            "lifecycle_mode": "dedicated",
+            "workspace_mounts": [],
+            "workspace_write_access": false,
+            "capabilities": mission.capabilities,
+        }))
+        .await?;
+
+    if !tool_result.success {
+        anyhow::bail!(
+            "{}",
+            tool_result
+                .error
+                .unwrap_or_else(|| "spawn_agent failed for delegated mission".into())
+        );
+    }
+
+    let payload: serde_json::Value = serde_json::from_str(&tool_result.output)
+        .context("Failed to parse spawn_agent response payload")?;
+    let agent_id_value = payload
+        .get("agent_id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let agent_id = agent_id_value
+        .ok_or_else(|| anyhow::anyhow!("spawn_agent response did not include agent_id"))?;
+
+    wait_for_delegated_agent_outcome(&labaclaw_dir, agent_id).await
+}
+
+async fn wait_for_delegated_agent_outcome(
+    labaclaw_dir: &Path,
+    agent_id: &str,
+) -> Result<DelegatedAgentOutcome> {
+    let agent_home = labaclaw_dir.join("spawned-agents").join(agent_id);
+    let runtime_state_path = crate::spawned_runtime::runtime_state_path(&agent_home);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(180);
+
+    loop {
+        if let Some(state) = crate::spawned_runtime::read_runtime_state(&runtime_state_path).await?
+        {
+            match state.task_status.as_str() {
+                "completed" => {
+                    let result = read_projected_text_artifact(
+                        state.result_path.as_deref(),
+                        &crate::spawned_runtime::bootstrap_result_path(&agent_home),
+                        "delegated worker result",
+                    )
+                    .await?;
+                    let metadata = read_projected_json_artifact(
+                        state.result_metadata_path.as_deref(),
+                        &crate::spawned_runtime::bootstrap_result_json_path(&agent_home),
+                    )
+                    .await?;
+                    return Ok(DelegatedAgentOutcome::Completed { result, metadata });
+                }
+                "questions_pending" => {
+                    let question = read_projected_text_artifact(
+                        state.question_path.as_deref(),
+                        &crate::spawned_runtime::bootstrap_question_path(&agent_home),
+                        "delegated worker question",
+                    )
+                    .await?;
+                    return Ok(DelegatedAgentOutcome::Question(question));
+                }
+                "failed" => {
+                    let error = state
+                        .error
+                        .unwrap_or_else(|| "delegated worker reported failure".into());
+                    anyhow::bail!(error);
+                }
+                _ => {}
+            }
+        }
+
+        if tokio::time::Instant::now() >= deadline {
+            anyhow::bail!("Timed out waiting for delegated coding worker '{agent_id}' to complete");
+        }
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
+async fn read_projected_text_artifact(
+    reference: Option<&str>,
+    fallback_path: &Path,
+    artifact_kind: &str,
+) -> Result<String> {
+    if let Some(reference) = reference {
+        if let Some(path) = local_file_ref_to_path(reference) {
+            return tokio::fs::read_to_string(&path).await.with_context(|| {
+                format!("Failed to read {artifact_kind} from {}", path.display())
+            });
+        }
+    }
+
+    tokio::fs::read_to_string(fallback_path)
+        .await
+        .with_context(|| {
+            format!(
+                "Failed to read {artifact_kind} from {}",
+                fallback_path.display()
+            )
+        })
+}
+
+async fn read_projected_json_artifact(
+    reference: Option<&str>,
+    fallback_path: &Path,
+) -> Result<Option<serde_json::Value>> {
+    let Some(candidate) = reference
+        .and_then(local_file_ref_to_path)
+        .or_else(|| fallback_path.exists().then(|| fallback_path.to_path_buf()))
+    else {
+        return Ok(None);
+    };
+
+    let bytes = tokio::fs::read(&candidate).await.with_context(|| {
+        format!(
+            "Failed to read delegated worker metadata from {}",
+            candidate.display()
+        )
+    })?;
+    let value = serde_json::from_slice(&bytes).with_context(|| {
+        format!(
+            "Failed to parse delegated worker metadata from {}",
+            candidate.display()
+        )
+    })?;
+    Ok(Some(value))
+}
+
+fn local_file_ref_to_path(reference: &str) -> Option<PathBuf> {
+    reference
+        .strip_prefix("file://")
+        .filter(|path| !path.trim().is_empty())
+        .map(PathBuf::from)
 }
 
 /// Slash-command definitions for interactive-mode completion.
@@ -3419,6 +4064,11 @@ pub async fn process_message_with_session(
         &config.autonomy,
         &config.workspace_dir,
     ));
+    if let Some(response) =
+        maybe_handle_responsibility_decision(&config, security.clone(), message).await?
+    {
+        return Ok(response);
+    }
     let mem: Arc<dyn Memory> = Arc::from(memory::create_memory_with_storage_and_routes(
         &config.memory,
         &config.embedding_routes,
@@ -7715,5 +8365,83 @@ Let me check the result."#;
         let completed = tracker.render_delta();
         assert!(completed.contains("✅ shell (2s)"));
         assert!(completed.contains("❌ web_search (1s)"));
+    }
+
+    #[test]
+    fn responsibility_decision_for_vague_calculator_request_asks_user() {
+        let decision =
+            maybe_prepare_responsibility_decision("Stwórz kalkulator zmiennoprzecinkowy.")
+                .expect("calculator request should be intercepted");
+
+        match decision {
+            ResponsibilityDecision::AskUser(question) => {
+                assert!(question.contains("Rust"));
+                assert!(question.contains("cargo test"));
+            }
+            other => panic!("expected AskUser, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn responsibility_decision_for_clarified_calculator_delegates_execution() {
+        let decision = maybe_prepare_responsibility_decision(
+            "Zbuduj CLI calculator w Rust. input=single quoted expression passed as argument, operators `+ - * /`, floating-point f64, parentheses, unary minus, delivery=artifacts and build logs.",
+        )
+        .expect("calculator request should be intercepted");
+
+        match decision {
+            ResponsibilityDecision::DelegateExecution(mission) => {
+                assert_eq!(mission.pack_id, "software_builder");
+                assert!(mission.context.contains("cargo test --quiet"));
+                assert!(mission.context.contains("cargo build --release --quiet"));
+            }
+            other => panic!("expected DelegateExecution, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn responsibility_decision_for_oversized_software_request_delegates_analysis() {
+        let decision = maybe_prepare_responsibility_decision(
+            "Przygotuj PRD, brief wymagań, architekturę oraz plan wdrożenia dla kalkulatora w Rust z liczbami zmiennoprzecinkowymi, nawiasami, CLI, testami, rolloutem i acceptance criteria.",
+        )
+        .expect("requirements-heavy request should be intercepted");
+
+        match decision {
+            ResponsibilityDecision::DelegateAnalysis(mission) => {
+                assert_eq!(mission.pack_id, "requirements_analyst");
+                assert!(mission.context.contains("implementation brief"));
+            }
+            other => panic!("expected DelegateAnalysis, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn responsibility_decision_for_vague_market_ta_asks_user() {
+        let decision = maybe_prepare_responsibility_decision("Zrób analizę techniczną rynku.")
+            .expect("market ta request should be intercepted");
+
+        match decision {
+            ResponsibilityDecision::AskUser(question) => {
+                assert!(question.contains("ticker"));
+                assert!(question.contains("timeframe"));
+            }
+            other => panic!("expected AskUser, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn responsibility_decision_for_clarified_market_ta_delegates_execution() {
+        let decision = maybe_prepare_responsibility_decision(
+            "technical analysis trade setup: ticker=BTCUSDT timeframe=4h horizon=3d exchange=Binance source=manual chart price=64000 support=61800 resistance=66800 rsi=58 macd=bullish-cross trend=bullish",
+        )
+        .expect("market ta request should be intercepted");
+
+        match decision {
+            ResponsibilityDecision::DelegateExecution(mission) => {
+                assert_eq!(mission.pack_id, "market_technical_analyst");
+                assert!(mission.context.contains("trade setup"));
+            }
+            other => panic!("expected DelegateExecution, got {other:?}"),
+        }
     }
 }
