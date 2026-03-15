@@ -355,7 +355,7 @@ fn maybe_prepare_dev_calculator_decision(message: &str) -> Option<Responsibility
 
 fn maybe_prepare_market_ta_decision(message: &str) -> Option<ResponsibilityDecision> {
     let lowered = message.to_ascii_lowercase();
-    if !contains_any_case_insensitive(
+    let looks_like_market_ta = contains_any_case_insensitive(
         &lowered,
         &[
             "technical analysis",
@@ -370,7 +370,9 @@ fn maybe_prepare_market_ta_decision(message: &str) -> Option<ResponsibilityDecis
             "stop loss",
             "take profit",
         ],
-    ) {
+    ) || (lowered.contains("analiz") && lowered.contains("technic"));
+
+    if !looks_like_market_ta {
         return None;
     }
 
@@ -579,7 +581,13 @@ fn extract_named_text(text: &str, label: &str) -> Option<String> {
 }
 
 fn extract_named_number(text: &str, label: &str) -> Option<f64> {
-    extract_named_text(text, label)?.parse::<f64>().ok()
+    let raw = extract_named_text(text, label)?;
+    let numeric_prefix = raw
+        .split_whitespace()
+        .next()
+        .unwrap_or(raw.as_str())
+        .trim_end_matches(|ch: char| matches!(ch, ',' | ';' | ')'));
+    numeric_prefix.parse::<f64>().ok()
 }
 
 async fn maybe_handle_responsibility_decision(
